@@ -1,0 +1,122 @@
+#!/bin/zsh
+# argus — manage a local mlx-vlm OpenAI-compatible server (Apple Silicon / MLX)
+# Config: ~/.config/argus/config  (KEY=VALUE, see `argus config`)
+
+CONFIG_DIR="$HOME/.config/argus"
+CONFIG="$CONFIG_DIR/config"
+HOST=""  # zsh preloads $HOST with the machine hostname; clear it so the default below wins
+[[ -f "$CONFIG" ]] && source "$CONFIG"
+
+MODEL="${MODEL:-mlx-community/Qwen3.8-27B-bf16}"
+PORT="${PORT:-8090}"
+HOST="${HOST:-127.0.0.1}"
+EXTRA_ARGS="${EXTRA_ARGS:-}"
+
+PIDFILE="$HOME/.local/state/argus/server.pid"
+LOG="$HOME/Library/Logs/argus.log"
+SERVER="$HOME/.local/bin/mlx_vlm.server"
+mkdir -p "$(dirname "$PIDFILE")" "$CONFIG_DIR"
+
+is_running() {
+  [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+is_ready() {
+  curl -s -m 2 "http://$HOST:$PORT/v1/models" >/dev/null 2>&1
+}
+
+cmd_start() {
+  if is_running; then echo "already running (pid $(cat "$PIDFILE"), http://$HOST:$PORT)"; return 0; fi
+  if [[ ! -x "$SERVER" ]] && ! command -v mlx_vlm.server >/dev/null; then
+    echo "mlx_vlm.server not found. Install it with:"
+    echo "  uv tool install -p 3.12 mlx-vlm    # or: pip install mlx-vlm"
+    return 1
+  fi
+  [[ -x "$SERVER" ]] || SERVER="$(command -v mlx_vlm.server)"
+  echo "starting $MODEL on http://$HOST:$PORT"
+  echo "(first run downloads the model from Hugging Face automatically)"
+  nohup "$SERVER" --model "$MODEL" --host "$HOST" --port "$PORT" ${=EXTRA_ARGS} >> "$LOG" 2>&1 &
+  echo $! > "$PIDFILE"
+  echo "pid $!  log: $LOG"
+}
+
+cmd_stop() {
+  if is_running; then
+    kill "$(cat "$PIDFILE")" && rm -f "$PIDFILE"
+    echo "stopped"
+  else
+    rm -f "$PIDFILE"
+    echo "not running"
+  fi
+}
+
+cmd_status() {
+  if is_ready; then
+    echo "ready: http://$HOST:$PORT  model: $MODEL"
+  elif is_running; then
+    echo "loading (pid $(cat "$PIDFILE")) — model is being loaded/downloaded, see: argus log"
+  else
+    echo "not running"
+  fi
+}
+
+cmd_download() {
+  if command -v hf >/dev/null; then
+    hf download "$MODEL"
+  elif command -v huggingface-cli >/dev/null; then
+    huggingface-cli download "$MODEL"
+  else
+    echo "hf CLI not found. Install with: pip install -U huggingface_hub"
+    return 1
+  fi
+}
+
+cmd_model() {
+  if [[ -z "$1" ]]; then
+    echo "current model: $MODEL"
+    echo "usage: argus model <huggingface-repo-id>   # e.g. mlx-community/Qwen3.8-27B-8bit"
+    return 0
+  fi
+  mkdir -p "$CONFIG_DIR"
+  touch "$CONFIG"
+  if grep -q '^MODEL=' "$CONFIG" 2>/dev/null; then
+    sed -i '' "s|^MODEL=.*|MODEL=$1|" "$CONFIG"
+  else
+    echo "MODEL=$1" >> "$CONFIG"
+  fi
+  echo "model set to $1 (restart to apply: argus restart)"
+}
+
+cmd_config() {
+  echo "config file: $CONFIG"
+  echo "----"
+  cat "$CONFIG" 2>/dev/null || echo "(empty — defaults in use)"
+  echo "----"
+  echo "effective: MODEL=$MODEL PORT=$PORT HOST=$HOST EXTRA_ARGS=$EXTRA_ARGS"
+}
+
+case "$1" in
+  start)    cmd_start ;;
+  stop)     cmd_stop ;;
+  restart)  cmd_stop; sleep 1; cmd_start ;;
+  status)   cmd_status ;;
+  log)      touch "$LOG"; tail -f "$LOG" ;;
+  download) cmd_download ;;
+  model)    cmd_model "$2" ;;
+  config)   cmd_config ;;
+  *)
+    cat <<'EOF'
+argus — local mlx-vlm server manager
+
+usage:
+  argus start       start the server (auto-downloads model on first run)
+  argus stop        stop the server
+  argus restart     restart the server
+  argus status      ready / loading / not running
+  argus log         tail the server log
+  argus download    pre-download the configured model
+  argus model [id]  show or set the model (huggingface repo id)
+  argus config      show config file and effective settings
+EOF
+    ;;
+esac

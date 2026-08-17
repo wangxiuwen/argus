@@ -11,8 +11,9 @@ import re
 import socketserver
 import subprocess
 import sys
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 
 API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
 PORT = int(os.environ.get("ARGUS_UI_PORT", "8091"))
@@ -21,15 +22,132 @@ ARGUS = os.path.expanduser("~/.local/bin/argus")
 CONFIG = os.path.expanduser("~/.config/argus/config")
 
 VARIANTS = [
-    {"label": "Qwen3.8-27B bf16 (~54 GB)", "id": "mlx-community/Qwen3.8-27B-bf16"},
-    {"label": "Qwen3.8-27B 8bit (~29 GB)", "id": "mlx-community/Qwen3.8-27B-8bit"},
-    {"label": "Qwen3.8-27B 4bit (~15 GB)", "id": "mlx-community/Qwen3.8-27B-4bit"},
+    {"name": "Qwen3.8-27B bf16", "id": "mlx-community/Qwen3.8-27B-bf16", "gb": 54.7},
+    {"name": "Qwen3.8-27B 8bit", "id": "mlx-community/Qwen3.8-27B-8bit", "gb": 29.5},
+    {"name": "Qwen3.8-27B 4bit", "id": "mlx-community/Qwen3.8-27B-4bit", "gb": 16.1},
 ]
 
 
+def repo_dir(repo):
+    return os.path.expanduser("~/.cache/huggingface/hub/models--" + repo.replace("/", "--"))
+
+
+def blob_bytes(repo):
+    """Bytes on disk that count toward this repo: finished blobs plus the newest
+    partial per blob. Interrupted downloads leave extra .incomplete files with a
+    different random suffix for the same blob, which must not be counted twice."""
+    blobs = os.path.join(repo_dir(repo), "blobs")
+    done, partial = 0, {}
+    try:
+        entries = os.scandir(blobs)
+    except OSError:
+        return 0, 0, 0
+    stale = 0
+    for e in entries:
+        try:
+            st = e.stat()
+        except OSError:
+            continue
+        if e.name.endswith(".incomplete"):
+            sha = e.name.split(".")[0]
+            prev = partial.get(sha)
+            if prev is None or st.st_mtime > prev[1]:
+                if prev:
+                    stale += prev[0]
+                partial[sha] = (st.st_size, st.st_mtime)
+            else:
+                stale += st.st_size
+        else:
+            done += st.st_size
+    return done, sum(v[0] for v in partial.values()), stale
+
+
+def variant_list():
+    """Known quantizations of the default model, kept as quick picks."""
+    out = []
+    for v in VARIANTS:
+        done, partial, _ = blob_bytes(v["id"])
+        total = v["gb"] * 1e9
+        out.append({
+            "id": v["id"],
+            "label": f'{v["name"]} (~{v["gb"]:.0f} GB)',
+            "gb": v["gb"],
+            # only "downloaded" when the weights are actually all there
+            "downloaded": partial == 0 and done >= 0.95 * total,
+        })
+    return out
+
+
+def local_models():
+    """Every model already in the Hugging Face cache that mlx-vlm could load.
+
+    Argus is not Qwen-specific: anything mlx-vlm supports (gemma, mistral,
+    pixtral, internvl, glm4v, minicpm-v, moondream, llava, smolvlm, …) shows up
+    here once it is on disk.
+    """
+    out = []
+    hub = os.path.expanduser("~/.cache/huggingface/hub")
+    try:
+        entries = sorted(os.scandir(hub), key=lambda e: e.name)
+    except OSError:
+        return out
+    for e in entries:
+        if not e.name.startswith("models--"):
+            continue
+        repo = e.name[len("models--"):].replace("--", "/")
+        snaps = os.path.join(e.path, "snapshots")
+        has_config = False
+        try:
+            for snap in os.scandir(snaps):
+                if os.path.exists(os.path.join(snap.path, "config.json")):
+                    has_config = True
+                    break
+        except OSError:
+            continue
+        if not has_config:
+            continue
+        done, partial, _ = blob_bytes(repo)
+        out.append({
+            "id": repo,
+            "label": f"{repo.split('/')[-1]} ({done / 1e9:.1f} GB)",
+            "gb": round(done / 1e9, 1),
+            "downloaded": partial == 0,
+            "local": True,
+        })
+    return out
+
+
+def search_hub(query, limit=20):
+    """Search Hugging Face for MLX-format models matching the query."""
+    q = urllib.parse.quote(query)
+    url = (f"https://huggingface.co/api/models?search={q}"
+           f"&filter=mlx&limit={limit}&sort=downloads&direction=-1")
+    try:
+        with urllib.request.urlopen(url, timeout=8) as r:
+            data = json.load(r)
+    except (OSError, json.JSONDecodeError):
+        return []
+    have = {m["id"] for m in local_models()}
+    out = []
+    for m in data:
+        rid = m.get("id")
+        if not rid:
+            continue
+        out.append({
+            "id": rid,
+            "label": rid,
+            "downloads": m.get("downloads", 0),
+            "downloaded": rid in have,
+            "remote": True,
+        })
+    return out
+
+
 def is_downloaded(repo):
-    d = os.path.expanduser("~/.cache/huggingface/hub/models--" + repo.replace("/", "--"))
-    return os.path.isdir(d)
+    for v in variant_list():
+        if v["id"] == repo:
+            return v["downloaded"]
+    return os.path.isdir(repo_dir(repo))
 
 
 DEFAULTS = {
@@ -83,40 +201,25 @@ def current_model():
     return read_config()["MODEL"]
 
 
-def model_dir_size(repo):
-    d = os.path.expanduser("~/.cache/huggingface/hub/models--" + repo.replace("/", "--"))
-    try:
-        out = subprocess.run(["du", "-sk", d], capture_output=True, text=True, timeout=5).stdout
-        return int(out.split()[0]) / 1024 / 1024
-    except Exception:
-        return 0.0
-
-
 def startup_stage(model):
-    """What the server is doing while it is not answering yet: downloading or loading.
+    """What the server is doing while it is not answering yet.
 
-    Progress comes from the huggingface tqdm bars in the log, which use \\r inside
-    one physical line, so split on both separators and scan from the end.
+    Progress is measured from the blobs on disk against the repo's known size,
+    which is more honest than the huggingface tqdm bar (it only ticks when a
+    whole file lands, so it reads 0% for many minutes on multi-GB shards).
     """
-    log = os.path.expanduser("~/Library/Logs/argus.log")
-    stage, percent = "starting", None
-    try:
-        with open(log, "rb") as f:
-            f.seek(0, os.SEEK_END)
-            f.seek(max(0, f.tell() - 65536))
-            chunks = f.read().decode("utf-8", "replace").replace("\r", "\n").split("\n")
-    except OSError:
-        chunks = []
-    for line in reversed(chunks):
-        m = re.search(r"Fetching \d+ files:\s+(\d+)%", line)
-        if m:
-            stage, percent = "downloading", int(m.group(1))
-            break
-        if "Model and processor loaded successfully" in line or "Loading model:" in line:
-            stage = "loading"
-            break
-    gb = model_dir_size(model)
-    return {"stage": stage, "percent": percent, "downloaded_gb": round(gb, 1)}
+    total = next((v["gb"] * 1e9 for v in VARIANTS if v["id"] == model), 0)
+    done, partial, stale = blob_bytes(model)
+    have = done + partial
+    stage = "downloading" if partial else ("loading" if have else "starting")
+    out = {
+        "stage": stage,
+        "downloaded_gb": round(have / 1e9, 1),
+        "total_gb": round(total / 1e9, 1) if total else None,
+        "percent": int(min(99, have * 100 / total)) if total else None,
+        "stale_gb": round(stale / 1e9, 1),
+    }
+    return out
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -193,10 +296,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/settings":
             self._serve_html("settings.html")
         elif self.path == "/argus/config":
-            variants = [dict(v) for v in VARIANTS]
-            for v in variants:
-                v["downloaded"] = is_downloaded(v["id"])
-            self._send_json({"config": read_config(), "variants": variants, "cache": cache_info()})
+            self._send_json({"config": read_config(), "variants": variant_list(),
+                             "cache": cache_info()})
         elif self.path == "/argus/health":
             # distinguish "not running" from "running but busy generating": /v1/models
             # blocks while the single-worker server is mid-generation
@@ -222,12 +323,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(out)
         elif self.path == "/argus/models":
             cur = current_model()
-            variants = [dict(v) for v in VARIANTS]
-            if cur not in [v["id"] for v in variants]:
-                variants.insert(0, {"label": cur, "id": cur})
-            for v in variants:
-                v["downloaded"] = is_downloaded(v["id"])
+            seen, variants = set(), []
+            for v in local_models() + variant_list():
+                if v["id"] in seen:
+                    continue
+                seen.add(v["id"])
+                variants.append(v)
+            if cur not in seen:
+                variants.insert(0, {"label": cur, "id": cur, "downloaded": False})
             self._send_json({"current": cur, "variants": variants})
+        elif self.path.startswith("/argus/search"):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("q", [""])[0]
+            self._send_json({"results": search_hub(q) if len(q) >= 2 else []})
         elif self.path.startswith("/v1/"):
             self._proxy()
         else:

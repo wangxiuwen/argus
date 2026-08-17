@@ -172,6 +172,8 @@
   .opt.cur { background: var(--hover); }
   .opt .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .opt .mark { color: var(--muted); font-size: 12px; flex: none; }
+  .opt-label { color: var(--muted); font-size: 11px; padding: 8px 8px 3px; }
+  #menu { width: 340px; }
   #send {
     width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--send);
     color: var(--send-text); font-size: 14px; cursor: pointer; flex: none;
@@ -439,17 +441,54 @@ $("launchBtn").onclick = () => {
 /* ---------- model picker ---------- */
 function shortName(id) { return id.split("/").pop(); }
 
+function optionRow(v) {
+  const el = document.createElement("div");
+  el.className = "opt" + (v.id === model ? " cur" : "");
+  const lbl = document.createElement("span");
+  lbl.className = "lbl";
+  lbl.textContent = v.label;
+  const mark = document.createElement("span");
+  mark.className = "mark";
+  mark.textContent = v.downloaded ? "✓" : "⤓";
+  el.append(lbl, mark);
+  el.title = v.downloaded ? v.id : v.id + " (not on disk yet — switching downloads it)";
+  el.onclick = () => { $("menu").classList.remove("open"); switchModel(v.id); };
+  return el;
+}
+
+function sectionLabel(text) {
+  const el = document.createElement("div");
+  el.className = "opt-label";
+  el.textContent = text;
+  return el;
+}
+
+let searchTimer = null;
+
 function renderList(filter = "") {
   const list = $("list");
   list.innerHTML = "";
-  const f = filter.toLowerCase();
-  for (const v of variants.filter(v => v.label.toLowerCase().includes(f) || v.id.toLowerCase().includes(f))) {
-    const el = document.createElement("div");
-    el.className = "opt" + (v.id === model ? " cur" : "");
-    el.innerHTML = `<span class="lbl">${v.label}</span><span class="mark">${v.downloaded ? "✓" : "⤓"}</span>`;
-    el.title = v.downloaded ? v.id : v.id + " (not downloaded yet — will download on switch)";
-    el.onclick = () => { $("menu").classList.remove("open"); switchModel(v.id); };
-    list.append(el);
+  const f = filter.trim().toLowerCase();
+  const local = variants.filter(v => v.label.toLowerCase().includes(f) || v.id.toLowerCase().includes(f));
+  for (const v of local) list.append(optionRow(v));
+  if (!local.length && f) list.append(sectionLabel("nothing local matches"));
+
+  // any model mlx-vlm can load works — search Hugging Face for MLX conversions
+  clearTimeout(searchTimer);
+  if (f.length >= 2) {
+    searchTimer = setTimeout(async () => {
+      const pending = sectionLabel("searching Hugging Face…");
+      list.append(pending);
+      let results = [];
+      try {
+        results = (await fetch(`/argus/search?q=${encodeURIComponent(f)}`).then(r => r.json())).results;
+      } catch { /* offline: local list still works */ }
+      pending.remove();
+      if (!results.length) return;
+      list.append(sectionLabel("on Hugging Face"));
+      const known = new Set(variants.map(v => v.id));
+      for (const v of results.filter(r => !known.has(r.id)).slice(0, 12)) list.append(optionRow(v));
+    }, 350);
   }
 }
 
@@ -521,8 +560,8 @@ function startupText(h) {
   if (!h.alive) return "server stopped";
   if (h.stage === "downloading") {
     const pct = h.percent != null ? ` ${h.percent}%` : "";
-    const gb = h.downloaded_gb ? ` · ${h.downloaded_gb} GB` : "";
-    return `downloading model${pct}${gb}`;
+    const of = h.total_gb ? ` · ${h.downloaded_gb}/${h.total_gb} GB` : "";
+    return `downloading model${pct}${of}`;
   }
   if (h.stage === "loading") return "loading model into memory…";
   return switching ? "restarting…" : "starting…";
@@ -585,8 +624,10 @@ async function send() {
   if (!ready) {
     await pollReady();
     if (!ready) {
-      const b = bubble("bot", `The model isn't ready yet — ${startupText(lastHealth)}. ` +
-        `Your message is still in the box; send it once the dot turns green.`);
+      const stale = lastHealth.stale_gb > 1
+        ? ` (${lastHealth.stale_gb} GB of abandoned partial downloads can be freed with: argus prune)` : "";
+      const b = bubble("bot", `The model isn't ready yet — ${startupText(lastHealth)}.` + stale +
+        ` Your message is still in the box; send it once the dot turns green.`);
       b.classList.add("notice");
       return;
     }

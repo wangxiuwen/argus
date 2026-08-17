@@ -182,6 +182,7 @@ case "$1" in
   ask)      shift; ARGUS_API="http://$HOST:$PORT" exec python3 "$SHARE/chat.py" ask "$@" ;;
   chat)     ARGUS_API="http://$HOST:$PORT" exec python3 "$SHARE/chat.py" chat ;;
   ui)       cmd_ui "$2" ;;
+  prune)    shift; exec python3 "$SHARE/prune.py" "$@" ;;
   bridge)   cmd_bridge "$2" ;;
   launch)   shift; ARGUS_API="http://$HOST:$PORT" ARGUS_BRIDGE="http://127.0.0.1:$BRIDGE_PORT" \
               exec python3 "$SHARE/launch.py" "$@" ;;
@@ -213,6 +214,7 @@ model:
   argus use <id>    switch model and restart the server (e.g. a 4bit/8bit variant)
   argus model [id]  show or set the model without restarting
   argus download    pre-download the configured model
+  argus prune       delete abandoned partial downloads from the HF cache
   argus config      show config file and effective settings
 EOF
     ;;

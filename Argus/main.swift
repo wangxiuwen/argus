@@ -322,7 +322,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
             guard task.terminationStatus == 0 else { return false }
             let data = output.fileHandleForReading.readDataToEndOfFile()
             let command = String(data: data, encoding: .utf8) ?? ""
-            return command.contains("mlx_vlm.server")
+            guard command.contains("mlx_vlm.server") else { return false }
+            let args = command.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            return args.enumerated().contains { index, arg in
+                arg == "--port=\(config.port)" ||
+                    (arg == "--port" && index + 1 < args.count && args[index + 1] == config.port)
+            }
         } catch {
             return false
         }

@@ -3,6 +3,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -58,6 +59,29 @@ class CliConfigTests(unittest.TestCase):
         finally:
             sleeper.terminate()
             sleeper.wait(timeout=5)
+
+    def test_stale_pidfile_never_kills_another_mlx_server(self):
+        other = subprocess.Popen([
+            sys.executable, "-c", "import time; time.sleep(30)",
+            "mlx_vlm.server", "--port", "65432",
+        ])
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                home = Path(temp)
+                config_dir = home / ".config" / "argus"
+                state_dir = home / ".local" / "state" / "argus"
+                config_dir.mkdir(parents=True)
+                state_dir.mkdir(parents=True)
+                (config_dir / "config").write_text("PORT=65431\n")
+                (state_dir / "server.pid").write_text(str(other.pid))
+                result = self.run_argus(home, "stop")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "not running")
+                self.assertIsNone(other.poll())
+        finally:
+            if other.poll() is None:
+                other.terminate()
+            other.wait(timeout=5)
 
     def test_ui_restart_and_stop_manage_the_real_listener(self):
         with socket.socket() as probe:

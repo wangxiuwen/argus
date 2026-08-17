@@ -81,7 +81,16 @@ class ProcessTests(unittest.TestCase):
             result = subprocess.CompletedProcess(
                 [], 0, stdout="python mlx_vlm.server --port 8090", stderr="")
             with mock.patch.object(ui.subprocess, "run", return_value=result):
-                self.assertTrue(ui.server_process_alive(str(pidfile)))
+                self.assertTrue(ui.server_process_alive(str(pidfile), 8090))
+
+    def test_server_on_another_port_is_not_owned(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pidfile = Path(temp) / "server.pid"
+            pidfile.write_text(str(os.getpid()))
+            result = subprocess.CompletedProcess(
+                [], 0, stdout="python mlx_vlm.server --port 9000", stderr="")
+            with mock.patch.object(ui.subprocess, "run", return_value=result):
+                self.assertFalse(ui.server_process_alive(str(pidfile), 8090))
 
 
 if __name__ == "__main__":

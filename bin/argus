@@ -69,6 +69,15 @@ process_matches() {
     ps -p "$pid" -o command= 2>/dev/null | grep -Fq -- "$needle"
 }
 
+server_process_matches() {
+  local pid="$1" command
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null || return 1
+  command="$(ps -p "$pid" -o command= 2>/dev/null)" || return 1
+  [[ "$command" == *"mlx_vlm.server"* ]] || return 1
+  print -r -- "$command" | grep -Eq -- \
+    "(^|[[:space:]])--port(=|[[:space:]])${PORT}([[:space:]]|$)"
+}
+
 listener_pid() {
   local port="$1" needle="$2" pid
   pid="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -n 1)"
@@ -85,7 +94,7 @@ pid_listens() {
 server_pid() {
   local pid=""
   [[ -f "$PIDFILE" ]] && pid="$(cat "$PIDFILE")"
-  if process_matches "$pid" "mlx_vlm.server"; then
+  if server_process_matches "$pid"; then
     echo "$pid"
     return 0
   fi
@@ -123,11 +132,13 @@ cmd_start() {
   [[ -x "$SERVER" ]] || SERVER="$(command -v mlx_vlm.server)"
   echo "starting $MODEL on http://$HOST:$PORT"
   echo "(first run downloads the model from Hugging Face automatically)"
-  pid="$(spawn_detached "$SERVER" --model "$MODEL" --host "$HOST" --port "$PORT" \
-    --max-tokens "$MAX_TOKENS" ${=EXTRA_ARGS})" || return 1
+  # Managed values come last so hand-edited EXTRA_ARGS cannot silently move
+  # the server to another model/host/port or override the reply limit.
+  pid="$(spawn_detached "$SERVER" ${=EXTRA_ARGS} --model "$MODEL" --host "$HOST" \
+    --port "$PORT" --max-tokens "$MAX_TOKENS")" || return 1
   echo "$pid" > "$PIDFILE"
   sleep 0.3
-  if ! process_matches "$pid" "mlx_vlm.server"; then
+  if ! server_process_matches "$pid"; then
     rm -f "$PIDFILE"
     echo "server failed to start — see: argus log"
     return 1

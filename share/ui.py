@@ -8,6 +8,7 @@ import http.server
 import json
 import os
 import re
+import shlex
 import socketserver
 import subprocess
 import sys
@@ -293,7 +294,7 @@ def current_model():
     return read_config()["MODEL"]
 
 
-def server_process_alive(pidfile=None):
+def server_process_alive(pidfile=None, expected_port=None):
     """A pidfile is only valid while it still names the mlx-vlm process.
 
     PIDs are reused by the OS. Checking only kill(pid, 0) can therefore leave
@@ -308,7 +309,18 @@ def server_process_alive(pidfile=None):
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "command="], capture_output=True,
             text=True, timeout=2, check=False)
-        return result.returncode == 0 and "mlx_vlm.server" in result.stdout
+        if result.returncode != 0 or "mlx_vlm.server" not in result.stdout:
+            return False
+        expected_port = str(expected_port or read_config()["PORT"])
+        try:
+            args = shlex.split(result.stdout)
+        except ValueError:
+            return False
+        return any(
+            arg == f"--port={expected_port}"
+            or (arg == "--port" and i + 1 < len(args) and args[i + 1] == expected_port)
+            for i, arg in enumerate(args)
+        )
     except (OSError, ValueError, subprocess.SubprocessError):
         return False
 

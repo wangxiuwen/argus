@@ -31,10 +31,11 @@
   #side.hidden { display: none; }
   #sideTop { display: flex; justify-content: flex-end; margin-bottom: 4px; }
   .icon-btn {
-    background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer;
-    padding: 2px 6px; border-radius: 6px; line-height: 1;
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    padding: 5px; border-radius: 7px; line-height: 0;
   }
-  .icon-btn:hover { background: var(--hover); }
+  .icon-btn svg { width: 19px; height: 19px; display: block; }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
   #toggleOut { display: none; }
   body.side-hidden #toggleOut { display: block; }
   .side-btn {
@@ -43,7 +44,8 @@
     cursor: pointer; width: 100%;
   }
   .side-btn:hover { background: var(--hover); }
-  .side-btn .ic { width: 16px; text-align: center; opacity: .75; }
+  .side-btn .ic { width: 18px; display: flex; justify-content: center; opacity: .8; }
+  .side-btn .ic svg { width: 17px; height: 17px; }
   #side .label { color: var(--muted); font-size: 11px; padding: 12px 10px 4px; letter-spacing: .03em; }
   #chats { overflow-y: auto; flex: 1; margin: 0 -2px; }
   .chat-row {
@@ -138,6 +140,16 @@
     color: var(--send-text); font-size: 14px; cursor: pointer; flex: none;
   }
   #send:disabled { opacity: .35; cursor: default; }
+  /* waiting indicator: pulsing dots + elapsed seconds until the first token lands */
+  .waiting { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .dots { display: inline-flex; gap: 4px; }
+  .dots i {
+    width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+    animation: blink 1.2s infinite ease-in-out both;
+  }
+  .dots i:nth-child(2) { animation-delay: .18s; }
+  .dots i:nth-child(3) { animation-delay: .36s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
   body.drag::after {
     content: "Drop image to attach"; position: fixed; inset: 0; z-index: 50;
     background: rgba(120,120,140,.14); border: 2px dashed var(--muted);
@@ -147,16 +159,34 @@
 </head>
 <body>
 <nav id="side">
-  <div id="sideTop"><button class="icon-btn" id="toggleIn" title="Collapse sidebar">◫</button></div>
-  <button class="side-btn" id="newChat"><span class="ic">✎</span>New Chat</button>
+  <div id="sideTop">
+    <button class="icon-btn" id="toggleIn" title="Collapse sidebar">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+        <rect x="2.2" y="3.4" width="15.6" height="13.2" rx="2.6"/>
+        <line x1="7.9" y1="3.4" x2="7.9" y2="16.6"/>
+      </svg>
+    </button>
+  </div>
+  <button class="side-btn" id="newChat">
+    <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
+      stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16h9A1.5 1.5 0 0 0 16 14.5V10"/><path d="M13.4 3.6a1.4 1.4 0 0 1 2 2L10.6 10.4l-2.6.6.6-2.6z"/></svg></span>New Chat
+  </button>
   <div class="label">Chats</div>
   <div id="chats"></div>
-  <button class="side-btn" id="openLog"><span class="ic">▤</span>Server Log</button>
+  <button class="side-btn" id="openLog">
+    <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
+      stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3" width="13" height="14" rx="2"/><line x1="6.5" y1="7" x2="13.5" y2="7"/><line x1="6.5" y1="10" x2="13.5" y2="10"/><line x1="6.5" y1="13" x2="11" y2="13"/></svg></span>Server Log
+  </button>
   <div class="foot" id="apiFoot"></div>
 </nav>
 <div id="main">
   <div id="bar">
-    <button class="icon-btn" id="toggleOut" title="Show sidebar">◫</button>
+    <button class="icon-btn" id="toggleOut" title="Show sidebar">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+        <rect x="2.2" y="3.4" width="15.6" height="13.2" rx="2.6"/>
+        <line x1="7.9" y1="3.4" x2="7.9" y2="16.6"/>
+      </svg>
+    </button>
     <span id="status"><span id="statusText">connecting…</span><span id="dot"></span></span>
   </div>
   <div id="log" class="empty">
@@ -336,16 +366,26 @@ async function switchModel(target) {
 
 /* ---------- status ---------- */
 async function pollReady() {
+  let h;
   try {
-    const d = await fetch("/v1/models").then(r => { if (!r.ok) throw 0; return r.json(); });
-    if (!switching) model = d.data[0].id;
-    else if (d.data[0].id === model) switching = false;
-    $("dot").classList.add("ok");
-    $("statusText").textContent = "ready";
-    setPickerLabel();
+    h = await fetch("/argus/health").then(r => r.json());
   } catch {
     $("dot").classList.remove("ok");
-    $("statusText").textContent = switching ? "restarting…" : "server stopped";
+    $("statusText").textContent = "interface offline";
+    return;
+  }
+  if (h.ready) {
+    if (!switching) model = h.model;
+    else if (h.model === model) switching = false;
+    $("dot").classList.add("ok");
+    $("statusText").textContent = busy ? "generating…" : "ready";
+    setPickerLabel();
+  } else {
+    // process alive but not answering = loading weights, or busy generating for us
+    $("dot").classList.toggle("ok", busy && h.alive);
+    $("statusText").textContent = busy ? "generating…"
+      : switching ? "restarting…"
+      : h.alive ? "loading model…" : "server stopped";
   }
 }
 loadModels().then(pollReady);
@@ -413,11 +453,31 @@ async function send() {
   messages.push({role: "user", content});
   persistCurrent();
   const b = bubble("bot", "");
+
+  // show pulsing dots + elapsed time until the first token arrives, and let Stop cancel
+  const wait = document.createElement("span");
+  wait.className = "waiting";
+  wait.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="secs">0s</span>';
+  b.prepend(wait);
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    const el = wait.querySelector(".secs");
+    if (el) el.textContent = Math.round((Date.now() - t0) / 1000) + "s";
+  }, 250);
+  const stopWaiting = () => { clearInterval(tick); wait.remove(); };
+
+  const ctl = new AbortController();
+  $("send").textContent = "■";
+  $("send").title = "Stop";
+  $("send").disabled = false;
+  $("send").onclick = () => ctl.abort();
+
   let answer = "", reasoning = "", reasonPre = null;
   try {
     const resp = await fetch("/v1/chat/completions", {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({model, messages, stream: true, max_tokens: 4096}),
+      signal: ctl.signal,
     });
     if (!resp.ok) throw new Error((await resp.json()).error || resp.status);
     const reader = resp.body.getReader();
@@ -434,6 +494,7 @@ async function send() {
         const data = line.slice(5).trim();
         if (data === "[DONE]") continue;
         const delta = JSON.parse(data).choices[0].delta || {};
+        if (delta.reasoning_content || delta.content) stopWaiting();
         if (delta.reasoning_content) {
           reasoning += delta.reasoning_content;
           if (!reasonPre) {
@@ -452,11 +513,27 @@ async function send() {
     messages.push({role: "assistant", content: answer});
     persistCurrent();
   } catch (err) {
-    b.lastChild.textContent = "⚠ " + err.message;
-    messages.pop();
+    if (err.name === "AbortError") {
+      if (answer) {
+        messages.push({role: "assistant", content: answer});
+        b.append(document.createTextNode("  (stopped)"));
+      } else {
+        b.lastChild.textContent = "(stopped)";
+        messages.pop();
+      }
+    } else {
+      b.lastChild.textContent = "⚠ " + err.message;
+      messages.pop();
+    }
     persistCurrent();
   }
-  busy = false; $("send").disabled = false; $("input").focus();
+  stopWaiting();
+  busy = false;
+  $("send").textContent = "↑";
+  $("send").title = "Send";
+  $("send").disabled = false;
+  $("send").onclick = send;
+  $("input").focus();
 }
 $("send").onclick = send;
 $("input").addEventListener("keydown", e => {

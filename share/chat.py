@@ -47,6 +47,8 @@ def stream_chat(messages, model):
         headers={"Content-Type": "application/json"},
     )
     out = []
+    # let the user know we are waiting rather than wedged; cleared on the first token
+    print("\033[2m…\033[0m", end="", flush=True)
     try:
         with urllib.request.urlopen(req) as r:
             for raw in r:
@@ -59,10 +61,18 @@ def stream_chat(messages, model):
                 delta = json.loads(data)["choices"][0].get("delta") or {}
                 piece = delta.get("content")
                 if piece:
+                    if not out:
+                        print("\r\033[K", end="", flush=True)
                     out.append(piece)
                     print(piece, end="", flush=True)
     except urllib.error.HTTPError as e:
-        sys.exit(f"\nserver error {e.code}: {e.read().decode('utf-8', 'replace')[:500]}")
+        print("\r\033[K", end="")
+        sys.exit(f"server error {e.code}: {e.read().decode('utf-8', 'replace')[:500]}")
+    except KeyboardInterrupt:
+        print("\r\033[K(stopped)")
+        return "".join(out)
+    if not out:
+        print("\r\033[K", end="")
     print()
     return "".join(out)
 

@@ -159,6 +159,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             for v in variants:
                 v["downloaded"] = is_downloaded(v["id"])
             self._send_json({"config": read_config(), "variants": variants, "cache": cache_info()})
+        elif self.path == "/argus/health":
+            # distinguish "not running" from "running but busy generating": /v1/models
+            # blocks while the single-worker server is mid-generation
+            pidfile = os.path.expanduser("~/.local/state/argus/server.pid")
+            alive = False
+            try:
+                with open(pidfile) as f:
+                    os.kill(int(f.read().strip()), 0)
+                alive = True
+            except (OSError, ValueError):
+                alive = False
+            ready, model = False, None
+            try:
+                with urllib.request.urlopen(API + "/v1/models", timeout=2) as r:
+                    model = json.load(r)["data"][0]["id"]
+                    ready = True
+            except OSError:
+                pass
+            self._send_json({"alive": alive, "ready": ready, "model": model})
         elif self.path == "/argus/models":
             cur = current_model()
             variants = [dict(v) for v in VARIANTS]

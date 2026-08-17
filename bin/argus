@@ -24,12 +24,20 @@ is_running() {
   [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
 }
 
+port_in_use() {
+  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1
+}
+
 is_ready() {
   curl -s -m 2 "http://$HOST:$PORT/v1/models" >/dev/null 2>&1
 }
 
 cmd_start() {
   if is_running; then echo "already running (pid $(cat "$PIDFILE"), http://$HOST:$PORT)"; return 0; fi
+  if port_in_use; then
+    echo "port $PORT is still in use — something else is bound to it. Run: argus stop"
+    return 1
+  fi
   if [[ ! -x "$SERVER" ]] && ! command -v mlx_vlm.server >/dev/null; then
     echo "mlx_vlm.server not found. Install it with:"
     echo "  uv tool install -p 3.12 mlx-vlm    # or: pip install mlx-vlm"
@@ -44,13 +52,25 @@ cmd_start() {
 }
 
 cmd_stop() {
-  if is_running; then
-    kill "$(cat "$PIDFILE")" && rm -f "$PIDFILE"
-    echo "stopped"
-  else
+  if ! is_running; then
     rm -f "$PIDFILE"
     echo "not running"
+    return 0
   fi
+  local pid
+  pid="$(cat "$PIDFILE")"
+  kill "$pid" 2>/dev/null
+  # a server mid-generation can take a while to notice SIGTERM; wait it out, then force
+  local i
+  for i in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null
+    sleep 1
+  fi
+  rm -f "$PIDFILE"
+  # the listening socket can linger briefly after the process is gone
+  for i in $(seq 1 20); do port_in_use || break; sleep 0.5; done
+  echo "stopped"
 }
 
 cmd_status() {
@@ -120,13 +140,13 @@ cmd_ui() {
 case "$1" in
   start)    cmd_start ;;
   stop)     cmd_stop ;;
-  restart)  cmd_stop; sleep 1; cmd_start ;;
+  restart)  cmd_stop; cmd_start ;;
   status)   cmd_status ;;
   log)      touch "$LOG"; tail -f "$LOG" ;;
   download) cmd_download ;;
   model)    cmd_model "$2" ;;
   use)      [[ -n "$2" ]] || { echo "usage: argus use <huggingface-repo-id>"; exit 1; }
-            cmd_model "$2"; cmd_stop; sleep 1; MODEL="$2"; cmd_start ;;
+            cmd_model "$2"; cmd_stop; MODEL="$2"; cmd_start ;;
   config)   cmd_config ;;
   ask)      shift; ARGUS_API="http://$HOST:$PORT" exec python3 "$SHARE/chat.py" ask "$@" ;;
   chat)     ARGUS_API="http://$HOST:$PORT" exec python3 "$SHARE/chat.py" chat ;;

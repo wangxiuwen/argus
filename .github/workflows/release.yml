@@ -58,19 +58,19 @@ jobs:
             --title "Argus $TAG" \
             --generate-notes \
             --notes "$(cat <<'EOF'
-### Install
+          ### Install
 
-```sh
-tar -xzf argus-*-macos-arm64.tar.gz
-./install.sh
-open ~/Applications/Argus.app
-```
+          ```sh
+          tar -xzf argus-*-macos-arm64.tar.gz
+          ./install.sh
+          open ~/Applications/Argus.app
+          ```
 
-Requires an Apple Silicon Mac and [mlx-vlm](https://github.com/Blaizzy/mlx-vlm):
-`uv tool install -p 3.12 mlx-vlm`
+          Requires an Apple Silicon Mac and [mlx-vlm](https://github.com/Blaizzy/mlx-vlm):
+          `uv tool install -p 3.12 mlx-vlm`
 
-The app is ad-hoc signed, not notarized. `install.sh` clears the quarantine
-flag for you; if you copy the app by hand, run
-`xattr -dr com.apple.quarantine ~/Applications/Argus.app`.
-EOF
-)" || gh release upload "$TAG" dist/*.tar.gz --clobber
+          The app is ad-hoc signed, not notarized. `install.sh` clears the quarantine
+          flag for you; if you copy the app by hand, run
+          `xattr -dr com.apple.quarantine ~/Applications/Argus.app`.
+          EOF
+          )" || gh release upload "$TAG" dist/*.tar.gz --clobber

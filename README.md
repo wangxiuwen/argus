@@ -23,6 +23,7 @@ Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`
 - **CLI** — `argus ask "what's this?" photo.png` for one-shot questions, `argus chat` for an interactive session (drop image paths straight into your message), `argus ui` for the chat page in a browser, plus `start|stop|restart|status|log|use|download|model|config`.
 - **Auto-download** — no model on disk? The first start pulls it from Hugging Face automatically (default: `mlx-community/Qwen3.8-27B-bf16`, ~54 GB bf16; pick a 4bit/8bit variant if you have less RAM).
 - **Resilient downloads** — Argus defaults to resumable HTTPS downloads instead of Xet/CAS chunk reconstruction, which is less reliable behind some mirrors and proxies. Set `HF_HUB_DISABLE_XET=0` when starting Argus to opt back into Xet.
+- **Automatic cache cleanup** — before each start, Argus removes only superseded partials for the selected model while retaining the newest partial for resume. Other models in the shared Hugging Face cache are never touched.
 - **Configurable** — model, host, port, and extra `mlx_vlm.server` flags in one config file.
 
 ## Requirements

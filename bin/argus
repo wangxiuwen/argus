@@ -131,6 +131,11 @@ cmd_start() {
     return 1
   fi
   [[ -x "$SERVER" ]] || SERVER="$(command -v mlx_vlm.server)"
+  # The Hugging Face cache is shared with other tools.  Limit automatic cleanup
+  # to this model and let prune.py retain the newest partial for safe resume.
+  if [[ -f "$SHARE/prune.py" ]]; then
+    python3 "$SHARE/prune.py" --repo "$MODEL" --min-age 30 --yes --quiet
+  fi
   echo "starting $MODEL on http://$HOST:$PORT"
   echo "(first run downloads the model from Hugging Face automatically)"
   # huggingface_hub installs hf-xet by default.  Its chunk reconstruction path
@@ -439,7 +444,7 @@ model:
   argus use <id>    switch model and restart the server (e.g. a 4bit/8bit variant)
   argus model [id]  show or set the model without restarting
   argus download    pre-download the configured model
-  argus prune       delete abandoned partial downloads from the HF cache
+  argus prune       delete superseded partial downloads from the HF cache
   argus config      show config file and effective settings
 EOF
     ;;

@@ -668,7 +668,7 @@ async function send() {
     await pollReady();
     if (!ready) {
       const stale = lastHealth.stale_gb > 1
-        ? ` (${lastHealth.stale_gb} GB of abandoned partial downloads can be freed with: argus prune)` : "";
+        ? ` (${lastHealth.stale_gb} GB of superseded partials will be cleaned automatically)` : "";
       const b = bubble("bot", `The model isn't ready yet — ${startupText(lastHealth)}.` + stale +
         ` Your message is still in the box; send it once the dot turns green.`);
       b.classList.add("notice");

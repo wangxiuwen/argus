@@ -70,6 +70,40 @@ class CliConfigTests(unittest.TestCase):
                     except (ProcessLookupError, ValueError):
                         pass
 
+    def test_start_auto_prunes_only_superseded_partials_for_current_model(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            bin_dir = home / ".local" / "bin"
+            share_dir = home / ".local" / "share" / "argus"
+            config_dir = home / ".config" / "argus"
+            blobs = home / ".cache" / "huggingface" / "hub" / \
+                "models--org--model" / "blobs"
+            for directory in (bin_dir, share_dir, config_dir, blobs):
+                directory.mkdir(parents=True)
+            shutil.copy(ROOT / "share" / "prune.py", share_dir / "prune.py")
+            server = bin_dir / "mlx_vlm.server"
+            server.write_text("#!/bin/sh\nsleep 30\n")
+            server.chmod(0o755)
+            (config_dir / "config").write_text("MODEL=org/model\nPORT=65434\n")
+            superseded = blobs / "weights.old.incomplete"
+            resumable = blobs / "weights.new.incomplete"
+            superseded.write_bytes(b"old")
+            resumable.write_bytes(b"new")
+            old = time.time() - 2 * 60 * 60
+            os.utime(superseded, (old, old))
+            result = self.run_argus(home, "start")
+            try:
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                self.assertFalse(superseded.exists())
+                self.assertTrue(resumable.exists())
+            finally:
+                pidfile = home / ".local" / "state" / "argus" / "server.pid"
+                if pidfile.exists():
+                    try:
+                        os.kill(int(pidfile.read_text()), 15)
+                    except (ProcessLookupError, ValueError):
+                        pass
+
     def test_model_update_treats_metacharacters_as_text(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp)

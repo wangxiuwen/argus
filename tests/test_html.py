@@ -13,11 +13,13 @@ class PageParser(HTMLParser):
         self.ids = []
         self.scripts = []
         self._script = None
+        self.attrs_by_id = {}
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if "id" in attrs:
             self.ids.append(attrs["id"])
+            self.attrs_by_id[attrs["id"]] = attrs
         if tag == "script" and "src" not in attrs:
             self._script = []
 
@@ -42,6 +44,13 @@ class HtmlTests(unittest.TestCase):
                     ["node", "--check", "-"], input="\n".join(parser.scripts),
                     text=True, capture_output=True, check=False)
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_settings_token_range_matches_backend_validation(self):
+        parser = PageParser()
+        parser.feed((ROOT / "share" / "settings.html").read_text())
+        control = parser.attrs_by_id["maxTokens"]
+        self.assertEqual(control["min"], "128")
+        self.assertEqual(control["max"], "131072")
 
 
 if __name__ == "__main__":

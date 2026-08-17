@@ -85,6 +85,10 @@ def stream_chat(messages, model, thinking=False):
     except urllib.error.HTTPError as e:
         print("\r\033[K", end="")
         sys.exit(f"server error {e.code}: {e.read().decode('utf-8', 'replace')[:500]}")
+    except urllib.error.URLError as e:
+        print("\r\033[K", end="")
+        reason = getattr(e, "reason", e)
+        sys.exit(f"server not reachable at {API}: {reason} — start it with: argus start")
     except KeyboardInterrupt:
         print("\r\033[K(stopped)")
         return "".join(out)

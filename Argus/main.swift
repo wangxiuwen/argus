@@ -309,7 +309,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
     var pidAlive: Bool {
         guard let s = try? String(contentsOfFile: pidPath, encoding: .utf8),
               let pid = Int32(s.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
-        return kill(pid, 0) == 0
+        guard kill(pid, 0) == 0 else { return false }
+        let task = Process()
+        let output = Pipe()
+        task.executableURL = URL(fileURLWithPath: "/bin/ps")
+        task.arguments = ["-p", String(pid), "-o", "command="]
+        task.standardOutput = output
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else { return false }
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            let command = String(data: data, encoding: .utf8) ?? ""
+            return command.contains("mlx_vlm.server")
+        } catch {
+            return false
+        }
     }
 
     func refresh() {

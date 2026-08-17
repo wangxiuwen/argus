@@ -13,6 +13,7 @@ SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html \
 build:
 	mkdir -p .build
 	swiftc -O -o $(OUT) Argus/main.swift
+	lipo $(OUT) -verify_arch arm64
 
 test:
 	python3 -m unittest discover -s tests -v

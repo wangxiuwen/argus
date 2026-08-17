@@ -1,7 +1,10 @@
 import importlib.util
 from pathlib import Path
+import os
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -46,6 +49,25 @@ class ConfigTests(unittest.TestCase):
             ui.write_config({"MODEL": "safe/model\nBAD=value"})
         with self.assertRaisesRegex(ValueError, "must be different"):
             ui.write_config({"UI_PORT": "8090"})
+
+
+class ProcessTests(unittest.TestCase):
+    def test_stale_pid_reused_by_an_unrelated_process_is_not_alive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pidfile = Path(temp) / "server.pid"
+            pidfile.write_text(str(os.getpid()))
+            result = subprocess.CompletedProcess([], 0, stdout="python unittest", stderr="")
+            with mock.patch.object(ui.subprocess, "run", return_value=result):
+                self.assertFalse(ui.server_process_alive(str(pidfile)))
+
+    def test_matching_server_process_is_alive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pidfile = Path(temp) / "server.pid"
+            pidfile.write_text(str(os.getpid()))
+            result = subprocess.CompletedProcess(
+                [], 0, stdout="python mlx_vlm.server --port 8090", stderr="")
+            with mock.patch.object(ui.subprocess, "run", return_value=result):
+                self.assertTrue(ui.server_process_alive(str(pidfile)))
 
 
 if __name__ == "__main__":

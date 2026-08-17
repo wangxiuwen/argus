@@ -22,6 +22,15 @@ class CommandArgsTests(unittest.TestCase):
             self.assertEqual(launch.server_model(), "local/bf16")
         self.assertTrue(get.call_args.args[0].endswith("/health"))
 
+    def test_server_context_limit_uses_effective_health_value(self):
+        context = mock.MagicMock()
+        context.__enter__.return_value = io.BytesIO(json.dumps({
+            "loaded_context_size": 65536,
+            "effective_context_limit": 32768,
+        }).encode())
+        with mock.patch.object(launch.urllib.request, "urlopen", return_value=context):
+            self.assertEqual(launch.server_context_limit(), 32768)
+
     def test_claude_uses_bare_mode_by_default(self):
         args = launch.command_args(
             "claude", "/bin/claude", launch.TOOLS["claude"],
@@ -47,11 +56,13 @@ class CommandArgsTests(unittest.TestCase):
         self.assertEqual(args, ["/bin/opencode", "--pure"])
 
     def test_opencode_provider_is_local_and_uses_a_stable_alias(self):
-        config = launch.opencode_config("org/model", "http://127.0.0.1:8092/v1")
+        config = launch.opencode_config(
+            "org/model", "http://127.0.0.1:8092/v1", context_limit=65536)
         self.assertEqual(config["model"], "argus/local")
         provider = config["provider"]["argus"]
         self.assertEqual(provider["options"]["baseURL"], "http://127.0.0.1:8092/v1")
         self.assertEqual(provider["models"]["local"]["name"], "org/model")
+        self.assertEqual(provider["models"]["local"]["limit"]["context"], 65536)
 
     def test_opencode_main_executes_with_isolated_local_configuration(self):
         captured = {}
@@ -62,6 +73,7 @@ class CommandArgsTests(unittest.TestCase):
 
         output = io.StringIO()
         with mock.patch.object(launch, "server_model", return_value="org/model"), \
+                mock.patch.object(launch, "server_context_limit", return_value=65536), \
                 mock.patch.object(launch, "ensure_bridge", return_value=True), \
                 mock.patch.object(launch.shutil, "which", return_value="/bin/opencode"), \
                 mock.patch.object(launch.os, "execve", side_effect=capture_exec), \
@@ -71,6 +83,8 @@ class CommandArgsTests(unittest.TestCase):
 
         config = json.loads(captured["env"]["OPENCODE_CONFIG_CONTENT"])
         self.assertEqual(config["model"], "argus/local")
+        self.assertEqual(config["provider"]["argus"]["models"]["local"]["limit"]["context"],
+                         65536)
         self.assertEqual(
             config["provider"]["argus"]["options"]["baseURL"],
             "http://127.0.0.1:8092/v1")
@@ -88,8 +102,9 @@ class CommandArgsTests(unittest.TestCase):
             captured.update(args=args, env=env)
             raise RuntimeError("exec intercepted")
 
-        with mock.patch.dict(os.environ, {"ARGUS_OPENCODE_FULL": "1"}), \
+        with mock.patch.dict(os.environ, {"ARGUS_OPENCODE_FULL": "1"}, clear=True), \
                 mock.patch.object(launch, "server_model", return_value="org/model"), \
+                mock.patch.object(launch, "server_context_limit", return_value=65536), \
                 mock.patch.object(launch, "ensure_bridge", return_value=True), \
                 mock.patch.object(launch.shutil, "which", return_value="/bin/opencode"), \
                 mock.patch.object(launch.os, "execve", side_effect=capture_exec), \

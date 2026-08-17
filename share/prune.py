@@ -15,6 +15,16 @@ import time
 HUB = os.path.expanduser("~/.cache/huggingface/hub")
 
 
+def positive_minutes(value):
+    try:
+        value = int(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("must be an integer") from e
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1 minute")
+    return value
+
+
 def scan(min_age_min):
     now = time.time()
     stale, active = [], []
@@ -41,7 +51,7 @@ def human(n):
 
 def main():
     ap = argparse.ArgumentParser(prog="argus prune", description=__doc__)
-    ap.add_argument("--min-age", type=int, default=30,
+    ap.add_argument("--min-age", type=positive_minutes, default=30,
                     help="only delete partials untouched for this many minutes (default 30)")
     ap.add_argument("--yes", "-y", action="store_true", help="delete without asking")
     args = ap.parse_args()
@@ -76,6 +86,13 @@ def main():
     freed = 0
     for path, size, _ in stale:
         try:
+            # A paused downloader may resume while this list is on screen.
+            # Never delete a file that changed since scan() or is now recent.
+            current = os.stat(path)
+            age_min = (time.time() - current.st_mtime) / 60
+            if current.st_size != size or age_min < args.min_age:
+                print(f"kept active download {os.path.relpath(path, HUB)}")
+                continue
             os.remove(path)
             freed += size
         except OSError as e:

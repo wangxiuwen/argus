@@ -273,6 +273,26 @@ def current_model():
     return read_config()["MODEL"]
 
 
+def server_process_alive(pidfile=None):
+    """A pidfile is only valid while it still names the mlx-vlm process.
+
+    PIDs are reused by the OS. Checking only kill(pid, 0) can therefore leave
+    the UI permanently claiming that a stopped server is loading when the PID
+    now belongs to an unrelated process.
+    """
+    pidfile = pidfile or os.path.expanduser("~/.local/state/argus/server.pid")
+    try:
+        with open(pidfile) as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="], capture_output=True,
+            text=True, timeout=2, check=False)
+        return result.returncode == 0 and "mlx_vlm.server" in result.stdout
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+
+
 def launch_argus_later(*args, delay=0.4):
     """Let the HTTP response flush before a command restarts this UI process."""
     def launch():
@@ -395,14 +415,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/argus/health":
             # distinguish "not running" from "running but busy generating": /v1/models
             # blocks while the single-worker server is mid-generation
-            pidfile = os.path.expanduser("~/.local/state/argus/server.pid")
-            alive = False
-            try:
-                with open(pidfile) as f:
-                    os.kill(int(f.read().strip()), 0)
-                alive = True
-            except (OSError, ValueError):
-                alive = False
+            alive = server_process_alive()
             ready, model = False, None
             try:
                 with urllib.request.urlopen(API + "/health", timeout=2) as r:

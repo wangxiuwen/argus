@@ -35,8 +35,10 @@ jobs:
         run: |
           set -e
           tar -tzf dist/*.tar.gz > files.txt
-          for want in ./Argus.app/Contents/MacOS/Argus ./bin/argus ./share/ui.html \
-                      ./share/ui.py ./share/bridge.py ./share/launch.py ./install.sh; do
+          for want in ./Argus.app/Contents/Info.plist ./Argus.app/Contents/MacOS/Argus \
+                      ./bin/argus ./share/chat.py ./share/ui.py ./share/ui.html \
+                      ./share/settings.html ./share/bridge.py ./share/launch.py \
+                      ./share/prune.py ./install.sh ./README.md ./LICENSE; do
             grep -qx "$want" files.txt || { echo "missing $want"; exit 1; }
           done
           VERSION="${RELEASE_TAG#v}"

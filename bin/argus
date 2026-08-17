@@ -76,6 +76,12 @@ listener_pid() {
   echo "$pid"
 }
 
+pid_listens() {
+  local pid="$1" port="$2"
+  [[ -n "$pid" ]] && lsof -nP -a -p "$pid" -iTCP:"$port" -sTCP:LISTEN \
+    >/dev/null 2>&1
+}
+
 server_pid() {
   local pid=""
   [[ -f "$PIDFILE" ]] && pid="$(cat "$PIDFILE")"
@@ -238,8 +244,13 @@ stop_ui() {
 start_ui() {
   local pid
   if pid="$(ui_pid)"; then
-    echo "$pid" > "$UI_PIDFILE"
-    return 0
+    if pid_listens "$pid" "$UI_PORT"; then
+      echo "$pid" > "$UI_PIDFILE"
+      return 0
+    fi
+    # A saved UI_PORT takes effect the next time the app opens the UI, even if
+    # the user chose Save rather than Save & Restart in the old UI process.
+    stop_ui >/dev/null 2>&1 || true
   fi
   if lsof -nP -iTCP:"$UI_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "UI port $UI_PORT is already in use"
@@ -311,9 +322,13 @@ cmd_bridge() {
     *)
       local pid
       if pid="$(bridge_pid)"; then
-        echo "$pid" > "$BRIDGE_PIDFILE"
-        echo "bridge already running: http://127.0.0.1:$BRIDGE_PORT"
-        return 0
+        if pid_listens "$pid" "$BRIDGE_PORT"; then
+          echo "$pid" > "$BRIDGE_PIDFILE"
+          echo "bridge already running: http://127.0.0.1:$BRIDGE_PORT"
+          return 0
+        fi
+        # Reconcile a saved BRIDGE_PORT when the old bridge is still alive.
+        cmd_bridge stop >/dev/null || return 1
       fi
       pid="$(spawn_detached env ARGUS_API="http://$CONNECT_HOST:$PORT" ARGUS_MODEL="$MODEL" \
         ARGUS_BRIDGE_PORT="$BRIDGE_PORT" ARGUS_MAX_TOKENS="$MAX_TOKENS" \

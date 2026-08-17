@@ -16,6 +16,10 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(info["CFBundleShortVersionString"], version)
         self.assertEqual(info["CFBundleVersion"], version)
 
+    def test_build_verifies_arm64_before_packaging(self):
+        makefile = (ROOT / "Makefile").read_text()
+        self.assertIn("lipo $(OUT) -verify_arch arm64", makefile)
+
 
 if __name__ == "__main__":
     unittest.main()

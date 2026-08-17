@@ -62,6 +62,17 @@ def server_model():
         return CONFIGURED_MODEL
 
 
+def server_context_limit():
+    try:
+        with urllib.request.urlopen(API + "/health", timeout=3) as r:
+            health = json.load(r)
+        value = health.get("effective_context_limit") or health.get("loaded_context_size")
+        value = int(value)
+        return value if value > 0 else 32768
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return 32768
+
+
 def bridge_up():
     try:
         urllib.request.urlopen(BRIDGE + "/health", timeout=2).read()
@@ -95,7 +106,7 @@ def list_tools():
     print("\n✓ = found on your PATH")
 
 
-def opencode_config(model, base):
+def opencode_config(model, base, context_limit=32768):
     return {
         "$schema": "https://opencode.ai/config.json",
         "model": "argus/local",
@@ -107,7 +118,7 @@ def opencode_config(model, base):
                 "models": {
                     "local": {
                         "name": model,
-                        "limit": {"context": 262144, "output": MAX_TOKENS},
+                        "limit": {"context": context_limit, "output": MAX_TOKENS},
                         "modalities": {"input": ["text", "image"], "output": ["text"]},
                     },
                 },
@@ -159,6 +170,7 @@ def main(argv):
         return 1
 
     env = dict(os.environ)
+    context_limit = server_context_limit()
     opencode_full = os.environ.get("ARGUS_OPENCODE_FULL") == "1"
     if tool["protocol"] == "anthropic":
         if not ensure_bridge():
@@ -187,7 +199,8 @@ def main(argv):
             # local provider must always be explicit. Full mode keeps user
             # customizations, but this late inline layer still pins the model
             # to Argus instead of silently returning to a cloud provider.
-            env["OPENCODE_CONFIG_CONTENT"] = json.dumps(opencode_config(model, base))
+            env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
+                opencode_config(model, base, context_limit))
             if not opencode_full:
                 # The default mode uses an isolated XDG home so cloud
                 # credentials, MCPs and project config cannot leak in.

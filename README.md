@@ -14,6 +14,9 @@ Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`
 ## Features
 
 - **Desktop chat app** — **Open Argus** in the menu bar opens a native window (AppKit + WebKit) with a sidebar of past chats, images by ＋ / drag & drop / ⌘V, streaming replies and collapsible thinking. While the model works you get pulsing dots and an elapsed-seconds counter, and the send button turns into Stop. No Electron: the whole app is one Swift file.
+- **Thinking on demand** — a Think chip next to the model picker turns reasoning on or off per request, no restart involved. Reasoning streams into a collapsible block.
+- **Speed readout** — live tokens/s while generating, then a footer with tok/s, time to first token and total time. On an M2 Max, Qwen3.8-27B in bf16 runs around 6 tok/s; the 4bit variant is several times faster.
+- **Launch page** — copyable commands that point curl, the OpenAI Python/Node SDKs, Codex, aider or any OpenAI-compatible app at your local server, with the current model name filled in.
 - **Settings window** — model, launch at login, expose-to-network, ports, reply length limit, model location with size, and extra server flags; Save or Save & Restart.
 - **Menu bar control** — start / stop / restart the server, live status icon, switch model, copy API URL, open log.
 - **Model switching** — pick bf16 / 8bit / 4bit from the tray submenu or the picker next to the message box; Argus rewrites the config, restarts the server, and downloads the weights if you don't have them yet. Already-downloaded variants are marked ✓.
@@ -60,8 +63,14 @@ argus stop
 argus restart
 argus status      # ready / loading / not running
 argus log         # tail the server log
+
+argus ask "what is in this image?" shot.png   # one-shot, images optional
+argus ask --think "17*23?"                    # let it reason first
+argus chat        # interactive; /think toggles reasoning, /new resets
+argus ui          # open the chat interface in a browser
+
+argus use mlx-community/Qwen3.8-27B-4bit      # switch model and restart
 argus download    # pre-download the configured model
-argus model mlx-community/Qwen3.8-27B-8bit   # switch model
 argus config      # show effective settings
 ```
 

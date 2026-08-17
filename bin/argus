@@ -10,11 +10,14 @@ HOST=""  # zsh preloads $HOST with the machine hostname; clear it so the default
 MODEL="${MODEL:-mlx-community/Qwen3.8-27B-bf16}"
 PORT="${PORT:-8090}"
 HOST="${HOST:-127.0.0.1}"
+UI_PORT="${UI_PORT:-8091}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 
 PIDFILE="$HOME/.local/state/argus/server.pid"
+UI_PIDFILE="$HOME/.local/state/argus/ui.pid"
 LOG="$HOME/Library/Logs/argus.log"
 SERVER="$HOME/.local/bin/mlx_vlm.server"
+SHARE="$HOME/.local/share/argus"
 mkdir -p "$(dirname "$PIDFILE")" "$CONFIG_DIR"
 
 is_running() {
@@ -95,6 +98,25 @@ cmd_config() {
   echo "effective: MODEL=$MODEL PORT=$PORT HOST=$HOST EXTRA_ARGS=$EXTRA_ARGS"
 }
 
+ui_running() {
+  [[ -f "$UI_PIDFILE" ]] && kill -0 "$(cat "$UI_PIDFILE")" 2>/dev/null
+}
+
+cmd_ui() {
+  if [[ "$1" == "stop" ]]; then
+    if ui_running; then kill "$(cat "$UI_PIDFILE")"; rm -f "$UI_PIDFILE"; echo "UI stopped"; else echo "UI not running"; fi
+    return 0
+  fi
+  if ! ui_running; then
+    ARGUS_API="http://$HOST:$PORT" ARGUS_UI_PORT="$UI_PORT" nohup python3 "$SHARE/ui.py" >> "$LOG" 2>&1 &
+    echo $! > "$UI_PIDFILE"
+    sleep 0.5
+  fi
+  echo "UI: http://127.0.0.1:$UI_PORT"
+  # "start" boots the UI server without opening a browser (used by the app's chat window)
+  [[ "$1" == "start" ]] || open "http://127.0.0.1:$UI_PORT" 2>/dev/null
+}
+
 case "$1" in
   start)    cmd_start ;;
   stop)     cmd_stop ;;
@@ -103,19 +125,33 @@ case "$1" in
   log)      touch "$LOG"; tail -f "$LOG" ;;
   download) cmd_download ;;
   model)    cmd_model "$2" ;;
+  use)      [[ -n "$2" ]] || { echo "usage: argus use <huggingface-repo-id>"; exit 1; }
+            cmd_model "$2"; cmd_stop; sleep 1; MODEL="$2"; cmd_start ;;
   config)   cmd_config ;;
+  ask)      shift; ARGUS_API="http://$HOST:$PORT" exec python3 "$SHARE/chat.py" ask "$@" ;;
+  chat)     ARGUS_API="http://$HOST:$PORT" exec python3 "$SHARE/chat.py" chat ;;
+  ui)       cmd_ui "$2" ;;
   *)
     cat <<'EOF'
-argus — local mlx-vlm server manager
+argus — local vision-language model, menu bar + CLI
 
-usage:
+server:
   argus start       start the server (auto-downloads model on first run)
   argus stop        stop the server
   argus restart     restart the server
   argus status      ready / loading / not running
   argus log         tail the server log
+
+chat:
+  argus ask "prompt" [image.png ...]   one-shot question, images optional
+  argus chat                           interactive chat (drop image paths in)
+  argus ui                             open the web chat UI (paste/drop images)
+  argus ui stop                        stop the web UI
+
+model:
+  argus use <id>    switch model and restart the server (e.g. a 4bit/8bit variant)
+  argus model [id]  show or set the model without restarting
   argus download    pre-download the configured model
-  argus model [id]  show or set the model (huggingface repo id)
   argus config      show config file and effective settings
 EOF
     ;;

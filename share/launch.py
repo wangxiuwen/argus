@@ -15,7 +15,12 @@ import urllib.request
 
 API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
 BRIDGE = os.environ.get("ARGUS_BRIDGE", "http://127.0.0.1:8092")
+CONFIGURED_MODEL = os.environ.get("ARGUS_MODEL")
 KEY = "argus"
+try:
+    MAX_TOKENS = int(os.environ.get("ARGUS_MAX_TOKENS", "4096"))
+except ValueError:
+    MAX_TOKENS = 4096
 
 # The protocol controls which client environment variables are populated.
 TOOLS = {
@@ -51,10 +56,10 @@ TOOLS = {
 
 def server_model():
     try:
-        with urllib.request.urlopen(API + "/v1/models", timeout=3) as r:
-            return json.load(r)["data"][0]["id"]
-    except OSError:
-        return None
+        with urllib.request.urlopen(API + "/health", timeout=3) as r:
+            return json.load(r)["loaded_model"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        return CONFIGURED_MODEL
 
 
 def bridge_up():
@@ -90,7 +95,29 @@ def list_tools():
     print("\n✓ = found on your PATH")
 
 
-def command_args(key, binary, tool, model, where, extra, claude_full=False):
+def opencode_config(model, base):
+    return {
+        "$schema": "https://opencode.ai/config.json",
+        "model": "argus/local",
+        "provider": {
+            "argus": {
+                "name": "Argus Local",
+                "npm": "@ai-sdk/openai-compatible",
+                "options": {"apiKey": KEY, "baseURL": base},
+                "models": {
+                    "local": {
+                        "name": model,
+                        "limit": {"context": 262144, "output": MAX_TOKENS},
+                        "modalities": {"input": ["text", "image"], "output": ["text"]},
+                    },
+                },
+            },
+        },
+    }
+
+
+def command_args(key, binary, tool, model, where, extra, claude_full=False,
+                 opencode_full=False):
     """Build the command line without launching it (also keeps this testable)."""
     args = [binary]
     if callable(tool.get("args")):
@@ -101,6 +128,8 @@ def command_args(key, binary, tool, model, where, extra, claude_full=False):
     # coding tools while skipping those customizations.
     if key == "claude" and not claude_full and "--bare" not in extra:
         args.append("--bare")
+    if key == "opencode" and not opencode_full and "--pure" not in extra:
+        args.append("--pure")
     return args + extra
 
 
@@ -130,6 +159,7 @@ def main(argv):
         return 1
 
     env = dict(os.environ)
+    opencode_full = os.environ.get("ARGUS_OPENCODE_FULL") == "1"
     if tool["protocol"] == "anthropic":
         if not ensure_bridge():
             print("the bridge did not come up — see: argus log")
@@ -152,8 +182,28 @@ def main(argv):
         env["OPENAI_MODEL"] = model
         where = base
 
+        if key == "opencode":
+            # OpenCode ignores OPENAI_BASE_URL as a provider override, so its
+            # local provider must always be explicit. Full mode keeps user
+            # customizations, but this late inline layer still pins the model
+            # to Argus instead of silently returning to a cloud provider.
+            env["OPENCODE_CONFIG_CONTENT"] = json.dumps(opencode_config(model, base))
+            if not opencode_full:
+                # The default mode uses an isolated XDG home so cloud
+                # credentials, MCPs and project config cannot leak in.
+                root = os.path.expanduser("~/.local/state/argus/opencode")
+                for kind in ("config", "data", "cache", "state"):
+                    env[f"XDG_{kind.upper()}_HOME"] = os.path.join(root, kind)
+                env["OPENCODE_CONFIG_DIR"] = os.path.join(root, "config")
+                env["OPENCODE_AUTH_CONTENT"] = "{}"
+                env["OPENCODE_DISABLE_PROJECT_CONFIG"] = "1"
+                env["OPENCODE_DISABLE_DEFAULT_PLUGINS"] = "1"
+                env["OPENCODE_DISABLE_EXTERNAL_SKILLS"] = "1"
+                env["OPENCODE_DISABLE_CLAUDE_CODE"] = "1"
+
     args = command_args(key, binary, tool, model, where, extra,
-                        claude_full=os.environ.get("ARGUS_CLAUDE_FULL") == "1")
+                        claude_full=os.environ.get("ARGUS_CLAUDE_FULL") == "1",
+                        opencode_full=opencode_full)
 
     print(f"launching {tool['name']} → {where}  (model: {model})")
     os.execve(binary, args, env)

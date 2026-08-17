@@ -11,6 +11,8 @@ import re
 import socketserver
 import subprocess
 import sys
+import tempfile
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -155,12 +157,53 @@ DEFAULTS = {
     "PORT": "8090",
     "HOST": "127.0.0.1",
     "UI_PORT": "8091",
+    "BRIDGE_PORT": "8092",
+    "MAX_TOKENS": "4096",
     "EXTRA_ARGS": "",
 }
+
+PORT_KEYS = ("PORT", "UI_PORT", "BRIDGE_PORT")
+
+
+def clean_config_value(key, value):
+    if not isinstance(value, (str, int)):
+        raise ValueError(f"{key} must be text or a number")
+    value = str(value).strip()
+    if any(c in value for c in ("\n", "\r", "\0")):
+        raise ValueError(f"{key} contains an invalid control character")
+    if key == "MODEL":
+        if not value:
+            raise ValueError("MODEL cannot be empty")
+    elif key == "HOST":
+        if value not in ("127.0.0.1", "0.0.0.0"):
+            raise ValueError("HOST must be 127.0.0.1 or 0.0.0.0")
+    elif key in PORT_KEYS:
+        try:
+            number = int(value)
+        except ValueError as e:
+            raise ValueError(f"{key} must be a port number") from e
+        if not 1024 <= number <= 65535:
+            raise ValueError(f"{key} must be between 1024 and 65535")
+        value = str(number)
+    elif key == "MAX_TOKENS":
+        try:
+            number = int(value)
+        except ValueError as e:
+            raise ValueError("MAX_TOKENS must be a number") from e
+        if not 128 <= number <= 131072:
+            raise ValueError("MAX_TOKENS must be between 128 and 131072")
+        value = str(number)
+    return value
+
+
+def strip_legacy_max_tokens(extra):
+    """Move the old EXTRA_ARGS --max-tokens setting to MAX_TOKENS."""
+    return re.sub(r"(?:^|\s)--max-tokens(?:=|\s+)\d+(?=\s|$)", " ", extra).strip()
 
 
 def read_config():
     cfg = dict(DEFAULTS)
+    seen = set()
     try:
         with open(CONFIG) as f:
             for line in f:
@@ -168,21 +211,50 @@ def read_config():
                 if "=" in line and not line.startswith("#"):
                     k, v = line.split("=", 1)
                     if k.strip() in cfg:
-                        cfg[k.strip()] = v.strip()
+                        key = k.strip()
+                        try:
+                            cfg[key] = clean_config_value(key, v)
+                            seen.add(key)
+                        except ValueError:
+                            pass
     except OSError:
         pass
+    if "MAX_TOKENS" not in seen:
+        match = re.search(r"(?:^|\s)--max-tokens(?:=|\s+)(\d+)(?=\s|$)",
+                          cfg["EXTRA_ARGS"])
+        if match:
+            try:
+                cfg["MAX_TOKENS"] = clean_config_value("MAX_TOKENS", match.group(1))
+            except ValueError:
+                pass
     return cfg
 
 
 def write_config(updates):
+    if not isinstance(updates, dict):
+        raise ValueError("config update must be an object")
+    unknown = set(updates) - set(DEFAULTS)
+    if unknown:
+        raise ValueError(f"unknown config key: {sorted(unknown)[0]}")
     cfg = read_config()
     for k, v in updates.items():
-        if k in cfg:
-            cfg[k] = str(v).strip()
+        cfg[k] = clean_config_value(k, v)
+    if len({cfg[k] for k in PORT_KEYS}) != len(PORT_KEYS):
+        raise ValueError("API, UI, and bridge ports must be different")
+    cfg["EXTRA_ARGS"] = strip_legacy_max_tokens(cfg["EXTRA_ARGS"])
     os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-    with open(CONFIG, "w") as f:
-        for k in DEFAULTS:
-            f.write(f"{k}={cfg[k]}\n")
+    fd, temp_path = tempfile.mkstemp(prefix=".config.", dir=os.path.dirname(CONFIG), text=True)
+    try:
+        with os.fdopen(fd, "w") as f:
+            for k in DEFAULTS:
+                f.write(f"{k}={cfg[k]}\n")
+        os.replace(temp_path, CONFIG)
+    except BaseException:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
     return cfg
 
 
@@ -199,6 +271,16 @@ def cache_info():
 
 def current_model():
     return read_config()["MODEL"]
+
+
+def launch_argus_later(*args, delay=0.4):
+    """Let the HTTP response flush before a command restarts this UI process."""
+    def launch():
+        subprocess.Popen([ARGUS, *args], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    timer = threading.Timer(delay, launch)
+    timer.daemon = True
+    timer.start()
 
 
 def startup_stage(model):
@@ -290,6 +372,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _read_json(self, max_bytes=1_000_000):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError as e:
+            raise ValueError("invalid Content-Length") from e
+        if not 0 <= length <= max_bytes:
+            raise ValueError("request body is too large")
+        try:
+            return json.loads(self.rfile.read(length) or b"{}")
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            raise ValueError("invalid JSON") from e
+
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             self._serve_html()
@@ -311,12 +405,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 alive = False
             ready, model = False, None
             try:
-                with urllib.request.urlopen(API + "/v1/models", timeout=2) as r:
-                    model = json.load(r)["data"][0]["id"]
-                    ready = True
-            except OSError:
+                with urllib.request.urlopen(API + "/health", timeout=2) as r:
+                    model = json.load(r).get("loaded_model")
+                    ready = bool(model)
+            except (OSError, TypeError, json.JSONDecodeError):
                 pass
-            out = {"alive": alive, "ready": ready, "model": model}
+            runtime_cfg = read_config()
+            out = {"alive": alive, "ready": ready, "model": model,
+                   "max_tokens": int(runtime_cfg["MAX_TOKENS"]),
+                   "api_host": runtime_cfg["HOST"], "api_port": runtime_cfg["PORT"]}
             if alive and not ready:
                 out.update(startup_stage(current_model()))
                 out["target"] = current_model()
@@ -342,24 +439,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/argus/use":
-            length = int(self.headers.get("Content-Length", 0))
-            model = json.loads(self.rfile.read(length)).get("model", "")
-            if not model:
-                self._send_json({"error": "model required"}, 400)
+            try:
+                body = self._read_json()
+                if not isinstance(body, dict):
+                    raise ValueError("request body must be an object")
+                model = clean_config_value("MODEL", body.get("model", ""))
+            except ValueError as e:
+                self._send_json({"error": str(e)}, 400)
                 return
             subprocess.Popen([ARGUS, "use", model],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
             self._send_json({"ok": True})
         elif self.path == "/argus/config":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length) or b"{}")
-            restart = bool(body.pop("restart", False))
-            cfg = write_config(body)
+            try:
+                body = self._read_json()
+                if not isinstance(body, dict):
+                    raise ValueError("request body must be an object")
+                restart = bool(body.pop("restart", False))
+                cfg = write_config(body)
+            except ValueError as e:
+                self._send_json({"error": str(e)}, 400)
+                return
             if restart:
-                subprocess.Popen([ARGUS, "restart"], stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
-            self._send_json({"ok": True, "config": cfg})
+                launch_argus_later("restart")
+            self._send_json({"ok": True, "config": cfg, "restarting": restart,
+                             "ui_url": f'http://127.0.0.1:{cfg["UI_PORT"]}'})
         elif self.path == "/argus/reveal":
             subprocess.Popen(["open", cache_info()["path"]],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -369,7 +474,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._send_json({"ok": True})
         elif self.path.startswith("/v1/"):
-            length = int(self.headers.get("Content-Length", 0))
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                self._send_json({"error": "invalid Content-Length"}, 400)
+                return
+            if not 0 <= length <= 50_000_000:
+                self._send_json({"error": "request body is too large"}, 413)
+                return
             self._proxy(self.rfile.read(length))
         else:
             self.send_error(404)

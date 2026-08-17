@@ -26,7 +26,7 @@ class LoadedModelTests(unittest.TestCase):
 
     @staticmethod
     def model_response(model):
-        return Response(json.dumps({"data": [{"id": model}]}).encode())
+        return Response(json.dumps({"loaded_model": model}).encode())
 
     def test_loaded_model_coalesces_nearby_requests(self):
         with mock.patch.object(bridge.time, "monotonic", side_effect=[10.0, 10.1]), \
@@ -35,6 +35,7 @@ class LoadedModelTests(unittest.TestCase):
             self.assertEqual(bridge.loaded_model(), "local/model")
             self.assertEqual(bridge.loaded_model(), "local/model")
         get.assert_called_once()
+        self.assertTrue(get.call_args.args[0].endswith("/health"))
 
     def test_loaded_model_refreshes_quickly_after_a_switch(self):
         replies = [self.model_response("old/model"), self.model_response("new/model")]
@@ -83,6 +84,14 @@ class TranslationTests(unittest.TestCase):
                 "messages": [{"role": "user", "content": "hello"}],
             })
         self.assertEqual(translated["model"], "local/model")
+
+    def test_request_never_falls_back_to_client_alias_when_server_is_down(self):
+        with mock.patch.object(bridge, "loaded_model", return_value=None):
+            translated = bridge.to_openai_request({
+                "model": "gpt-5-codex",
+                "messages": [{"role": "user", "content": "hello"}],
+            })
+        self.assertIsNone(translated["model"])
 
 
 if __name__ == "__main__":

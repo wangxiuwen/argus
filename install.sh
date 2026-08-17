@@ -14,7 +14,8 @@ cp -R Argus.app "$APP_DIR/"
 xattr -dr com.apple.quarantine "$APP_DIR/Argus.app" 2>/dev/null || true
 
 install -m 755 bin/argus "$BIN_DIR/argus"
-install -m 644 share/* "$SHARE_DIR/"
+install -m 644 share/chat.py share/ui.py share/ui.html share/settings.html \
+  share/launch.py share/bridge.py share/prune.py "$SHARE_DIR/"
 
 echo "Installed:"
 echo "  $APP_DIR/Argus.app"

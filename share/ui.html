@@ -297,10 +297,28 @@ $("think").onclick = () => {
 paintThink();
 
 function loadChats() {
-  try { chats = JSON.parse(localStorage.getItem("argus.chats") || "[]"); } catch { chats = []; }
+  try {
+    const saved = JSON.parse(localStorage.getItem("argus.chats") || "[]");
+    chats = Array.isArray(saved) ? saved : [];
+  } catch { chats = []; }
 }
 function saveChats() {
-  localStorage.setItem("argus.chats", JSON.stringify(chats.slice(0, 50)));
+  // data: URLs from screenshots can exceed localStorage's small quota and used
+  // to make send() throw before the request even left the browser. Keep full
+  // images in the live conversation, but persist a text-safe history.
+  const compact = chats.slice(0, 50).map(c => ({...c, messages: c.messages.map(m => ({
+    ...m,
+    content: Array.isArray(m.content)
+      ? m.content.filter(p => p.type !== "image_url")
+      : m.content,
+  }))}));
+  while (compact.length) {
+    try {
+      localStorage.setItem("argus.chats", JSON.stringify(compact));
+      return;
+    } catch { compact.pop(); }
+  }
+  try { localStorage.removeItem("argus.chats"); } catch { /* storage unavailable */ }
 }
 function chatTitle(msgs) {
   const first = msgs.find(m => m.role === "user");
@@ -352,6 +370,8 @@ function persistCurrent() {
 function newChat() {
   messages = [];
   curId = null;
+  images = [];
+  $("thumbs").innerHTML = "";
   $("log").innerHTML = HERO;
   $("log").classList.add("empty");
   renderChats();
@@ -522,15 +542,31 @@ async function loadModels() {
 
 async function switchModel(target) {
   if (target === model) return;
+  if (busy) {
+    const notice = bubble("bot", "Stop the current reply before switching models.");
+    notice.classList.add("notice");
+    return;
+  }
+  const previous = model;
   switching = true;
+  ready = false;
   model = target;
   setPickerLabel();
   $("dot").classList.remove("ok");
   $("statusText").textContent = "restarting…";
   bubble("bot", `Switching to ${shortName(target)} — restarting the server` +
     (variants.find(v => v.id === target)?.downloaded ? "…" : " and downloading the model (this can take a while)…"));
-  await fetch("/argus/use", {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({model: target})});
+  try {
+    const resp = await fetch("/argus/use", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({model: target})});
+    if (!resp.ok) throw new Error((await resp.json()).error || `HTTP ${resp.status}`);
+  } catch (err) {
+    switching = false;
+    model = previous;
+    setPickerLabel();
+    const notice = bubble("bot", `Could not switch models: ${err.message}`);
+    notice.classList.add("notice");
+  }
 }
 
 /* ---------- status ---------- */
@@ -544,7 +580,8 @@ async function pollReady() {
     $("statusText").textContent = "interface offline";
     return;
   }
-  if (h.ready) {
+  const targetReady = h.ready && (!switching || h.model === model);
+  if (targetReady) {
     if (!switching) model = h.model;
     else if (h.model === model) switching = false;
     $("dot").classList.add("ok");
@@ -557,7 +594,9 @@ async function pollReady() {
     $("dot").classList.toggle("ok", busy && h.alive);
     $("statusText").textContent = busy ? "generating…" : startupText(h);
   }
-  ready = !!h.ready;
+  ready = !!targetReady;
+  const apiHost = h.api_host === "0.0.0.0" ? location.hostname : h.api_host;
+  if (h.api_port) $("apiFoot").textContent = `http://${apiHost}:${h.api_port}/v1`;
 }
 
 function startupText(h) {
@@ -570,9 +609,8 @@ function startupText(h) {
   if (h.stage === "loading") return "loading model into memory…";
   return switching ? "restarting…" : "starting…";
 }
-loadModels().then(pollReady);
-setInterval(() => { loadModels(); pollReady(); }, 5000);
-$("apiFoot").textContent = location.origin.replace("8091", "8090") + "/v1";
+loadModels().then(pollReady).catch(() => pollReady());
+setInterval(() => { loadModels().catch(() => {}); pollReady(); }, 5000);
 
 /* ---------- images ---------- */
 function addImage(dataURL) {
@@ -675,11 +713,16 @@ async function send() {
   try {
     const resp = await fetch("/v1/chat/completions", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({model: serving, messages, stream: true, max_tokens: 4096,
+      body: JSON.stringify({model: serving, messages, stream: true,
+        max_tokens: lastHealth.max_tokens || 4096,
         enable_thinking: thinking}),
       signal: ctl.signal,
     });
-    if (!resp.ok) throw new Error((await resp.json()).error || resp.status);
+    if (!resp.ok) {
+      const failure = await resp.json();
+      const detail = typeof failure.error === "string" ? failure.error : failure.error?.message;
+      throw new Error(detail || `HTTP ${resp.status}`);
+    }
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = "";

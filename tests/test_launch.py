@@ -1,6 +1,10 @@
 import importlib.util
+import io
+import json
+import os
 from pathlib import Path
 import unittest
+from unittest import mock
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -10,6 +14,14 @@ SPEC.loader.exec_module(launch)
 
 
 class CommandArgsTests(unittest.TestCase):
+    def test_server_model_uses_health_not_downloaded_model_list_order(self):
+        context = mock.MagicMock()
+        context.__enter__.return_value = io.BytesIO(
+            json.dumps({"loaded_model": "local/bf16"}).encode())
+        with mock.patch.object(launch.urllib.request, "urlopen", return_value=context) as get:
+            self.assertEqual(launch.server_model(), "local/bf16")
+        self.assertTrue(get.call_args.args[0].endswith("/health"))
+
     def test_claude_uses_bare_mode_by_default(self):
         args = launch.command_args(
             "claude", "/bin/claude", launch.TOOLS["claude"],
@@ -27,6 +39,68 @@ class CommandArgsTests(unittest.TestCase):
             "claude", "/bin/claude", launch.TOOLS["claude"],
             "local/model", "http://127.0.0.1:8092", [], claude_full=True)
         self.assertEqual(args, ["/bin/claude"])
+
+    def test_opencode_uses_pure_mode_by_default(self):
+        args = launch.command_args(
+            "opencode", "/bin/opencode", launch.TOOLS["opencode"],
+            "local/model", "http://127.0.0.1:8092/v1", [])
+        self.assertEqual(args, ["/bin/opencode", "--pure"])
+
+    def test_opencode_provider_is_local_and_uses_a_stable_alias(self):
+        config = launch.opencode_config("org/model", "http://127.0.0.1:8092/v1")
+        self.assertEqual(config["model"], "argus/local")
+        provider = config["provider"]["argus"]
+        self.assertEqual(provider["options"]["baseURL"], "http://127.0.0.1:8092/v1")
+        self.assertEqual(provider["models"]["local"]["name"], "org/model")
+
+    def test_opencode_main_executes_with_isolated_local_configuration(self):
+        captured = {}
+
+        def capture_exec(binary, args, env):
+            captured.update(binary=binary, args=args, env=env)
+            raise RuntimeError("exec intercepted")
+
+        output = io.StringIO()
+        with mock.patch.object(launch, "server_model", return_value="org/model"), \
+                mock.patch.object(launch, "ensure_bridge", return_value=True), \
+                mock.patch.object(launch.shutil, "which", return_value="/bin/opencode"), \
+                mock.patch.object(launch.os, "execve", side_effect=capture_exec), \
+                mock.patch("sys.stdout", output):
+            with self.assertRaisesRegex(RuntimeError, "exec intercepted"):
+                launch.main(["opencode", "run", "hello"])
+
+        config = json.loads(captured["env"]["OPENCODE_CONFIG_CONTENT"])
+        self.assertEqual(config["model"], "argus/local")
+        self.assertEqual(
+            config["provider"]["argus"]["options"]["baseURL"],
+            "http://127.0.0.1:8092/v1")
+        self.assertEqual(captured["env"]["OPENCODE_AUTH_CONTENT"], "{}")
+        self.assertTrue(captured["env"]["XDG_CONFIG_HOME"].endswith("/argus/opencode/config"))
+        self.assertEqual(captured["env"]["OPENCODE_CONFIG_DIR"],
+                         captured["env"]["XDG_CONFIG_HOME"])
+        self.assertEqual(captured["args"],
+                         ["/bin/opencode", "--pure", "run", "hello"])
+
+    def test_full_opencode_keeps_local_provider_without_isolating_user_config(self):
+        captured = {}
+
+        def capture_exec(binary, args, env):
+            captured.update(args=args, env=env)
+            raise RuntimeError("exec intercepted")
+
+        with mock.patch.dict(os.environ, {"ARGUS_OPENCODE_FULL": "1"}), \
+                mock.patch.object(launch, "server_model", return_value="org/model"), \
+                mock.patch.object(launch, "ensure_bridge", return_value=True), \
+                mock.patch.object(launch.shutil, "which", return_value="/bin/opencode"), \
+                mock.patch.object(launch.os, "execve", side_effect=capture_exec), \
+                mock.patch("sys.stdout", io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "exec intercepted"):
+                launch.main(["opencode", "run", "hello"])
+
+        config = json.loads(captured["env"]["OPENCODE_CONFIG_CONTENT"])
+        self.assertEqual(config["model"], "argus/local")
+        self.assertNotIn("XDG_CONFIG_HOME", captured["env"])
+        self.assertNotIn("--pure", captured["args"])
 
     def test_aider_receives_bridge_base_url(self):
         args = launch.command_args(

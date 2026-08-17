@@ -4,15 +4,43 @@
 
 CONFIG_DIR="$HOME/.config/argus"
 CONFIG="$CONFIG_DIR/config"
-HOST=""  # zsh preloads $HOST with the machine hostname; clear it so the default below wins
-[[ -f "$CONFIG" ]] && source "$CONFIG"
+
+# Parse data as data.  Sourcing the config would execute shell syntax embedded
+# in a model id or EXTRA_ARGS, and a malformed hand-edited file could run
+# arbitrary commands whenever Argus starts.
+MODEL="" PORT="" HOST="" UI_PORT="" BRIDGE_PORT="" MAX_TOKENS="" EXTRA_ARGS=""
+if [[ -f "$CONFIG" ]]; then
+  while IFS='=' read -r task_key task_value; do
+    case "$task_key" in
+      MODEL)       MODEL="$task_value" ;;
+      PORT)        PORT="$task_value" ;;
+      HOST)        HOST="$task_value" ;;
+      UI_PORT)     UI_PORT="$task_value" ;;
+      BRIDGE_PORT) BRIDGE_PORT="$task_value" ;;
+      MAX_TOKENS)  MAX_TOKENS="$task_value" ;;
+      EXTRA_ARGS)  EXTRA_ARGS="$task_value" ;;
+    esac
+  done < "$CONFIG"
+fi
 
 MODEL="${MODEL:-mlx-community/Qwen3.8-27B-bf16}"
 PORT="${PORT:-8090}"
 HOST="${HOST:-127.0.0.1}"
 UI_PORT="${UI_PORT:-8091}"
 BRIDGE_PORT="${BRIDGE_PORT:-8092}"
+if [[ -z "$MAX_TOKENS" && "$EXTRA_ARGS" =~ '--max-tokens(=|[[:space:]]+)([0-9]+)' ]]; then
+  MAX_TOKENS="${match[2]}"
+fi
+MAX_TOKENS="${MAX_TOKENS:-4096}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
+
+[[ "$PORT" == <-> && "$PORT" -ge 1024 && "$PORT" -le 65535 ]] || PORT=8090
+[[ "$UI_PORT" == <-> && "$UI_PORT" -ge 1024 && "$UI_PORT" -le 65535 ]] || UI_PORT=8091
+[[ "$BRIDGE_PORT" == <-> && "$BRIDGE_PORT" -ge 1024 && "$BRIDGE_PORT" -le 65535 ]] || BRIDGE_PORT=8092
+[[ "$MAX_TOKENS" == <-> && "$MAX_TOKENS" -ge 128 && "$MAX_TOKENS" -le 131072 ]] || MAX_TOKENS=4096
+[[ "$HOST" == "127.0.0.1" || "$HOST" == "0.0.0.0" ]] || HOST=127.0.0.1
+CONNECT_HOST="$HOST"
+[[ "$CONNECT_HOST" == "0.0.0.0" ]] && CONNECT_HOST="127.0.0.1"
 
 PIDFILE="$HOME/.local/state/argus/server.pid"
 UI_PIDFILE="$HOME/.local/state/argus/ui.pid"
@@ -20,10 +48,46 @@ BRIDGE_PIDFILE="$HOME/.local/state/argus/bridge.pid"
 LOG="$HOME/Library/Logs/argus.log"
 SERVER="$HOME/.local/bin/mlx_vlm.server"
 SHARE="$HOME/.local/share/argus"
-mkdir -p "$(dirname "$PIDFILE")" "$CONFIG_DIR"
+mkdir -p "$(dirname "$PIDFILE")" "$(dirname "$LOG")" "$CONFIG_DIR"
+
+spawn_detached() {
+  # start_new_session is stronger than shell `nohup &`: it survives callers
+  # that tear down their entire terminal/process session after this command.
+  python3 -c '
+import subprocess, sys
+log = open(sys.argv[1], "ab", buffering=0)
+process = subprocess.Popen(
+    sys.argv[2:], stdin=subprocess.DEVNULL, stdout=log,
+    stderr=subprocess.STDOUT, start_new_session=True, close_fds=True)
+print(process.pid)
+' "$LOG" "$@"
+}
+
+process_matches() {
+  local pid="$1" needle="$2"
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && \
+    ps -p "$pid" -o command= 2>/dev/null | grep -Fq -- "$needle"
+}
+
+listener_pid() {
+  local port="$1" needle="$2" pid
+  pid="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -n 1)"
+  process_matches "$pid" "$needle" || return 1
+  echo "$pid"
+}
+
+server_pid() {
+  local pid=""
+  [[ -f "$PIDFILE" ]] && pid="$(cat "$PIDFILE")"
+  if process_matches "$pid" "mlx_vlm.server"; then
+    echo "$pid"
+    return 0
+  fi
+  listener_pid "$PORT" "mlx_vlm.server"
+}
 
 is_running() {
-  [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+  server_pid >/dev/null
 }
 
 port_in_use() {
@@ -31,13 +95,18 @@ port_in_use() {
 }
 
 is_ready() {
-  curl -s -m 2 "http://$HOST:$PORT/v1/models" >/dev/null 2>&1
+  curl -s -m 2 "http://$CONNECT_HOST:$PORT/health" >/dev/null 2>&1
 }
 
 cmd_start() {
-  if is_running; then echo "already running (pid $(cat "$PIDFILE"), http://$HOST:$PORT)"; return 0; fi
+  local pid
+  if pid="$(server_pid)"; then
+    echo "$pid" > "$PIDFILE"
+    echo "already running (pid $pid, http://$HOST:$PORT)"
+    return 0
+  fi
   if port_in_use; then
-    echo "port $PORT is still in use — something else is bound to it. Run: argus stop"
+    echo "port $PORT is already owned by another process — stop it or choose another port"
     return 1
   fi
   if [[ ! -x "$SERVER" ]] && ! command -v mlx_vlm.server >/dev/null; then
@@ -48,19 +117,25 @@ cmd_start() {
   [[ -x "$SERVER" ]] || SERVER="$(command -v mlx_vlm.server)"
   echo "starting $MODEL on http://$HOST:$PORT"
   echo "(first run downloads the model from Hugging Face automatically)"
-  nohup "$SERVER" --model "$MODEL" --host "$HOST" --port "$PORT" ${=EXTRA_ARGS} >> "$LOG" 2>&1 &
-  echo $! > "$PIDFILE"
-  echo "pid $!  log: $LOG"
+  pid="$(spawn_detached "$SERVER" --model "$MODEL" --host "$HOST" --port "$PORT" \
+    --max-tokens "$MAX_TOKENS" ${=EXTRA_ARGS})" || return 1
+  echo "$pid" > "$PIDFILE"
+  sleep 0.3
+  if ! process_matches "$pid" "mlx_vlm.server"; then
+    rm -f "$PIDFILE"
+    echo "server failed to start — see: argus log"
+    return 1
+  fi
+  echo "pid $pid  log: $LOG"
 }
 
 cmd_stop() {
-  if ! is_running; then
+  local pid
+  if ! pid="$(server_pid)"; then
     rm -f "$PIDFILE"
     echo "not running"
     return 0
   fi
-  local pid
-  pid="$(cat "$PIDFILE")"
   kill "$pid" 2>/dev/null
   # a server mid-generation can take a while to notice SIGTERM; wait it out, then force
   local i
@@ -76,10 +151,13 @@ cmd_stop() {
 }
 
 cmd_status() {
-  if is_ready; then
-    echo "ready: http://$HOST:$PORT  model: $MODEL"
+  local actual_model
+  actual_model="$(curl -s -m 2 "http://$CONNECT_HOST:$PORT/health" 2>/dev/null | \
+    python3 -c 'import json,sys; print(json.load(sys.stdin).get("loaded_model") or "")' 2>/dev/null)"
+  if [[ -n "$actual_model" ]]; then
+    echo "ready: http://$CONNECT_HOST:$PORT  model: $actual_model"
   elif is_running; then
-    echo "loading (pid $(cat "$PIDFILE")) — model is being loaded/downloaded, see: argus log"
+    echo "busy or loading (pid $(server_pid)) — see: argus log"
   else
     echo "not running"
   fi
@@ -102,13 +180,24 @@ cmd_model() {
     echo "usage: argus model <huggingface-repo-id>   # e.g. mlx-community/Qwen3.8-27B-8bit"
     return 0
   fi
+  if [[ "$1" == *$'\n'* || "$1" == *$'\r'* || "$1" == *'='* ]]; then
+    echo "invalid model id"
+    return 1
+  fi
   mkdir -p "$CONFIG_DIR"
   touch "$CONFIG"
-  if grep -q '^MODEL=' "$CONFIG" 2>/dev/null; then
-    sed -i '' "s|^MODEL=.*|MODEL=$1|" "$CONFIG"
-  else
-    echo "MODEL=$1" >> "$CONFIG"
-  fi
+  local temp_config line found=0
+  temp_config="$(mktemp "$CONFIG_DIR/config.XXXXXX")" || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == MODEL=* ]]; then
+      print -r -- "MODEL=$1" >> "$temp_config"
+      found=1
+    else
+      print -r -- "$line" >> "$temp_config"
+    fi
+  done < "$CONFIG"
+  (( found )) || print -r -- "MODEL=$1" >> "$temp_config"
+  mv "$temp_config" "$CONFIG"
   echo "model set to $1 (restart to apply: argus restart)"
 }
 
@@ -117,45 +206,86 @@ cmd_config() {
   echo "----"
   cat "$CONFIG" 2>/dev/null || echo "(empty — defaults in use)"
   echo "----"
-  echo "effective: MODEL=$MODEL PORT=$PORT HOST=$HOST EXTRA_ARGS=$EXTRA_ARGS"
+  echo "effective: MODEL=$MODEL PORT=$PORT HOST=$HOST UI_PORT=$UI_PORT BRIDGE_PORT=$BRIDGE_PORT MAX_TOKENS=$MAX_TOKENS EXTRA_ARGS=$EXTRA_ARGS"
+}
+
+ui_pid() {
+  local pid=""
+  [[ -f "$UI_PIDFILE" ]] && pid="$(cat "$UI_PIDFILE")"
+  if process_matches "$pid" "$SHARE/ui.py"; then
+    echo "$pid"
+    return 0
+  fi
+  listener_pid "$UI_PORT" "$SHARE/ui.py"
 }
 
 ui_running() {
-  [[ -f "$UI_PIDFILE" ]] && kill -0 "$(cat "$UI_PIDFILE")" 2>/dev/null
+  ui_pid >/dev/null
+}
+
+stop_ui() {
+  local pid
+  if ! pid="$(ui_pid)"; then
+    rm -f "$UI_PIDFILE"
+    return 1
+  fi
+  kill "$pid" 2>/dev/null
+  for _ in {1..20}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  rm -f "$UI_PIDFILE"
+  return 0
+}
+
+start_ui() {
+  local pid
+  if pid="$(ui_pid)"; then
+    echo "$pid" > "$UI_PIDFILE"
+    return 0
+  fi
+  if lsof -nP -iTCP:"$UI_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "UI port $UI_PORT is already in use"
+    return 1
+  fi
+  pid="$(spawn_detached env ARGUS_API="http://$CONNECT_HOST:$PORT" ARGUS_UI_PORT="$UI_PORT" \
+    python3 "$SHARE/ui.py")" || return 1
+  echo "$pid" > "$UI_PIDFILE"
+  for _ in {1..20}; do
+    if curl -s -m 1 "http://127.0.0.1:$UI_PORT/" >/dev/null 2>&1; then return 0; fi
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  rm -f "$UI_PIDFILE"
+  echo "UI failed to start — see: argus log"
+  return 1
 }
 
 cmd_ui() {
-  if [[ "$1" == "stop" ]]; then
-    if ui_running; then kill "$(cat "$UI_PIDFILE")"; rm -f "$UI_PIDFILE"; echo "UI stopped"; else echo "UI not running"; fi
-    return 0
-  fi
-  if ! ui_running; then
-    ARGUS_API="http://$HOST:$PORT" ARGUS_UI_PORT="$UI_PORT" nohup python3 "$SHARE/ui.py" >> "$LOG" 2>&1 &
-    echo $! > "$UI_PIDFILE"
-    sleep 0.5
-  fi
+  case "$1" in
+    stop)
+      if stop_ui; then echo "UI stopped"; else echo "UI not running"; fi
+      return 0 ;;
+    restart)
+      stop_ui >/dev/null 2>&1 || true
+      start_ui || return 1 ;;
+    *)
+      start_ui || return 1 ;;
+  esac
   echo "UI: http://127.0.0.1:$UI_PORT"
   # "start" boots the UI server without opening a browser (used by the app's chat window)
-  [[ "$1" == "start" ]] || open "http://127.0.0.1:$UI_PORT" 2>/dev/null
+  [[ "$1" == "start" || "$1" == "restart" ]] || open "http://127.0.0.1:$UI_PORT" 2>/dev/null
 }
 
 bridge_pid() {
   local pid=""
   if [[ -f "$BRIDGE_PIDFILE" ]]; then
     pid="$(cat "$BRIDGE_PIDFILE")"
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    if process_matches "$pid" "$SHARE/bridge.py"; then
       echo "$pid"
       return 0
     fi
   fi
   # Recover a bridge whose pidfile was lost, but never adopt an unrelated
   # process merely because it happens to own the configured port.
-  pid="$(lsof -tiTCP:"$BRIDGE_PORT" -sTCP:LISTEN 2>/dev/null | head -n 1)"
-  if [[ -n "$pid" ]] && ps -p "$pid" -o command= 2>/dev/null | grep -Fq "$SHARE/bridge.py"; then
-    echo "$pid"
-    return 0
-  fi
-  return 1
+  listener_pid "$BRIDGE_PORT" "$SHARE/bridge.py"
 }
 
 bridge_running() {
@@ -166,12 +296,16 @@ cmd_bridge() {
   case "$1" in
     stop)
       local pid
-      if pid="$(bridge_pid)"; then kill "$pid"; rm -f "$BRIDGE_PIDFILE"; echo "bridge stopped"
+      if pid="$(bridge_pid)"; then
+        kill "$pid"
+        for _ in {1..20}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        rm -f "$BRIDGE_PIDFILE"
+        echo "bridge stopped"
       else echo "bridge not running"; fi
       ;;
     status)
       if curl -s -m 2 "http://127.0.0.1:$BRIDGE_PORT/health" >/dev/null 2>&1; then
-        echo "bridge ready: http://127.0.0.1:$BRIDGE_PORT (Anthropic protocol)"
+        echo "bridge ready: http://127.0.0.1:$BRIDGE_PORT (OpenAI + Anthropic)"
       else echo "bridge not running"; fi
       ;;
     *)
@@ -181,13 +315,13 @@ cmd_bridge() {
         echo "bridge already running: http://127.0.0.1:$BRIDGE_PORT"
         return 0
       fi
-      ARGUS_API="http://$HOST:$PORT" ARGUS_BRIDGE_PORT="$BRIDGE_PORT" \
-        nohup python3 "$SHARE/bridge.py" >> "$LOG" 2>&1 &
-      pid=$!
+      pid="$(spawn_detached env ARGUS_API="http://$CONNECT_HOST:$PORT" ARGUS_MODEL="$MODEL" \
+        ARGUS_BRIDGE_PORT="$BRIDGE_PORT" ARGUS_MAX_TOKENS="$MAX_TOKENS" \
+        python3 "$SHARE/bridge.py")" || return 1
       echo "$pid" > "$BRIDGE_PIDFILE"
       sleep 0.6
       if kill -0 "$pid" 2>/dev/null && curl -s -m 2 "http://127.0.0.1:$BRIDGE_PORT/health" >/dev/null 2>&1; then
-        echo "bridge on http://127.0.0.1:$BRIDGE_PORT (Anthropic protocol → http://$HOST:$PORT)"
+        echo "bridge on http://127.0.0.1:$BRIDGE_PORT (OpenAI + Anthropic → http://$HOST:$PORT)"
       else
         rm -f "$BRIDGE_PIDFILE"
         echo "bridge failed to start — see: argus log"
@@ -197,23 +331,45 @@ cmd_bridge() {
   esac
 }
 
+cmd_restart() {
+  local had_ui=0 had_bridge=0
+  ui_running && had_ui=1
+  bridge_running && had_bridge=1
+  if (( had_bridge )); then cmd_bridge stop >/dev/null; fi
+  if (( had_ui )); then stop_ui >/dev/null 2>&1; fi
+  cmd_stop || return 1
+  cmd_start || return 1
+  if (( had_ui )); then start_ui || return 1; fi
+  if (( had_bridge )); then cmd_bridge start || return 1; fi
+  return 0
+}
+
 case "$1" in
   start)    cmd_start ;;
   stop)     cmd_stop ;;
-  restart)  cmd_stop; cmd_start ;;
+  restart)  cmd_restart ;;
   status)   cmd_status ;;
   log)      touch "$LOG"; tail -f "$LOG" ;;
   download) cmd_download ;;
   model)    cmd_model "$2" ;;
   use)      [[ -n "$2" ]] || { echo "usage: argus use <huggingface-repo-id>"; exit 1; }
-            cmd_model "$2"; cmd_stop; MODEL="$2"; cmd_start ;;
+            cmd_model "$2" || exit 1
+            cmd_stop || exit 1
+            MODEL="$2"
+            cmd_start ;;
   config)   cmd_config ;;
-  ask)      shift; ARGUS_API="http://$HOST:$PORT" exec python3 "$SHARE/chat.py" ask "$@" ;;
-  chat)     ARGUS_API="http://$HOST:$PORT" exec python3 "$SHARE/chat.py" chat ;;
+  ask)      shift; ARGUS_API="http://$CONNECT_HOST:$PORT" ARGUS_MODEL="$MODEL" \
+              ARGUS_MAX_TOKENS="$MAX_TOKENS" \
+              exec python3 "$SHARE/chat.py" ask "$@" ;;
+  chat)     ARGUS_API="http://$CONNECT_HOST:$PORT" ARGUS_MODEL="$MODEL" \
+              ARGUS_MAX_TOKENS="$MAX_TOKENS" \
+              exec python3 "$SHARE/chat.py" chat ;;
   ui)       cmd_ui "$2" ;;
   prune)    shift; exec python3 "$SHARE/prune.py" "$@" ;;
   bridge)   cmd_bridge "$2" ;;
-  launch)   shift; ARGUS_API="http://$HOST:$PORT" ARGUS_BRIDGE="http://127.0.0.1:$BRIDGE_PORT" \
+  launch)   shift; ARGUS_API="http://$CONNECT_HOST:$PORT" ARGUS_MODEL="$MODEL" \
+              ARGUS_MAX_TOKENS="$MAX_TOKENS" \
+              ARGUS_BRIDGE="http://127.0.0.1:$BRIDGE_PORT" \
               exec python3 "$SHARE/launch.py" "$@" ;;
   *)
     cat <<'EOF'
@@ -231,13 +387,14 @@ chat:
   argus chat                           interactive chat (drop image paths in)
   argus ui                             open the web chat UI (paste/drop images)
   argus ui stop                        stop the web UI
+  argus ui restart                     restart the web UI without opening a browser
 
 use it from other tools:
   argus launch                         list tools and whether they are installed
   argus launch codex|aider|opencode    run an OpenAI-protocol tool against Argus
   argus launch claude                  run Claude Code via the Anthropic bridge
   argus launch shell                   a shell with the API env already set
-  argus bridge [stop|status]           the Anthropic-compatible endpoint
+  argus bridge [stop|status]           the OpenAI + Anthropic compatibility endpoint
 
 model:
   argus use <id>    switch model and restart the server (e.g. a 4bit/8bit variant)

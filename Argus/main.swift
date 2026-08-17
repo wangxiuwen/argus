@@ -18,10 +18,11 @@ struct Config {
         for line in text.split(separator: "\n") {
             let parts = line.split(separator: "=", maxSplits: 1).map(String.init)
             guard parts.count == 2 else { continue }
+            let value = parts[1].trimmingCharacters(in: .whitespaces)
             switch parts[0].trimmingCharacters(in: .whitespaces) {
-            case "MODEL": c.model = parts[1]
-            case "HOST": c.host = parts[1]
-            case "PORT": c.port = parts[1]
+            case "MODEL" where !value.isEmpty: c.model = value
+            case "HOST" where value == "127.0.0.1" || value == "0.0.0.0": c.host = value
+            case "PORT" where (1024...65535).contains(Int(value) ?? 0): c.port = value
             default: break
             }
         }
@@ -52,7 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         ("Qwen3.8-27B 4bit (~15 GB)", "mlx-community/Qwen3.8-27B-4bit"),
     ]
 
-    var apiURL: String { "http://\(config.host):\(config.port)" }
+    var apiURL: String {
+        let clientHost = config.host == "0.0.0.0" ? "127.0.0.1" : config.host
+        return "http://\(clientHost):\(config.port)"
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Edit menu so ⌘C/⌘V/⌘A work inside the chat window (accessory apps have no default menu)
@@ -154,9 +158,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         // small delay so a freshly spawned UI server is listening before we load
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
             guard let self, let web = self.chatWebView else { return }
-            if web.url == nil {
-                web.load(URLRequest(url: URL(string: "http://127.0.0.1:\(self.uiPort)")!))
-            }
+            // Reload on every reopen: the UI may have restarted or moved after
+            // a Settings port change while this retained window was closed.
+            web.load(URLRequest(url: URL(string: "http://127.0.0.1:\(self.uiPort)")!))
         }
         NSApp.activate(ignoringOtherApps: true)
         chatWindow?.makeKeyAndOrderFront(nil)
@@ -186,7 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         let path = NSString(string: "~/.config/argus/config").expandingTildeInPath
         if let text = try? String(contentsOfFile: path, encoding: .utf8) {
             for line in text.split(separator: "\n") where line.hasPrefix("UI_PORT=") {
-                return String(line.dropFirst("UI_PORT=".count))
+                let value = String(line.dropFirst("UI_PORT=".count))
+                    .trimmingCharacters(in: .whitespaces)
+                if (1024...65535).contains(Int(value) ?? 0) { return value }
             }
         }
         return "8091"
@@ -312,19 +318,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         for item in modelMenu.items {
             item.state = (item.representedObject as? String) == config.model ? .on : .off
         }
-        var req = URLRequest(url: URL(string: "\(apiURL)/v1/models")!)
+        var req = URLRequest(url: URL(string: "\(apiURL)/health")!)
         req.timeoutInterval = 2
-        URLSession.shared.dataTask(with: req) { [weak self] _, resp, _ in
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
             guard let self else { return }
             let ready = (resp as? HTTPURLResponse)?.statusCode == 200
             let alive = self.pidAlive
+            let loadedModel: String? = data.flatMap {
+                (try? JSONSerialization.jsonObject(with: $0) as? [String: Any])?["loaded_model"] as? String
+            }
             DispatchQueue.main.async {
                 if ready {
+                    let activeModel = loadedModel ?? self.config.model
+                    self.modelLine.title = "Model: \(activeModel)"
+                    for item in self.modelMenu.items {
+                        item.state = (item.representedObject as? String) == activeModel ? .on : .off
+                    }
                     self.statusItem.button?.title = "🟢A"
                     self.statusLine.title = "Status: ready — \(self.apiURL)"
                 } else if alive {
                     self.statusItem.button?.title = "🟡A"
-                    self.statusLine.title = "Status: loading model…"
+                    self.statusLine.title = "Status: busy or loading model…"
                 } else {
                     self.statusItem.button?.title = "⚪️A"
                     self.statusLine.title = "Status: not running"

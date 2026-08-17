@@ -100,10 +100,11 @@
   <span class="ic">⇄</span>
   <div class="body">
     <div class="title">Ports</div>
-    <div class="hint">API server and the chat interface.</div>
+    <div class="hint">API server, chat interface, and coding-tool compatibility bridge.</div>
     <div class="ctl">
       <label>API <input type="number" id="port" min="1024" max="65535"></label>
       <label>UI <input type="number" id="uiPort" min="1024" max="65535"></label>
+      <label>Bridge <input type="number" id="bridgePort" min="1024" max="65535"></label>
     </div>
   </div>
 </div>
@@ -152,14 +153,6 @@ function nativeCall(action, value) {
 }
 window.setLoginState = on => $("login").classList.toggle("on", !!on);
 
-function splitExtra(extra) {
-  const m = /--max-tokens\s+(\d+)/.exec(extra || "");
-  return {
-    maxTokens: m ? parseInt(m[1]) : 4096,
-    rest: (extra || "").replace(/--max-tokens\s+\d+/, "").trim(),
-  };
-}
-
 async function load() {
   const d = await fetch("/argus/config").then(r => r.json());
   cfg = d.config; variants = d.variants;
@@ -180,10 +173,10 @@ async function load() {
   $("expose").classList.toggle("on", cfg.HOST === "0.0.0.0");
   $("port").value = cfg.PORT;
   $("uiPort").value = cfg.UI_PORT;
-  const {maxTokens, rest} = splitExtra(cfg.EXTRA_ARGS);
-  $("maxTokens").value = maxTokens;
-  $("maxTokensVal").textContent = maxTokens;
-  $("extra").value = rest;
+  $("bridgePort").value = cfg.BRIDGE_PORT;
+  $("maxTokens").value = cfg.MAX_TOKENS;
+  $("maxTokensVal").textContent = cfg.MAX_TOKENS;
+  $("extra").value = cfg.EXTRA_ARGS;
   $("cachePath").textContent = d.cache.path;
   $("cacheSize").textContent = d.cache.size;
   nativeCall("getLogin");
@@ -200,26 +193,43 @@ $("reveal").onclick = () => fetch("/argus/reveal", {method: "POST"});
 
 async function save(restart) {
   const custom = $("customModel").value.trim();
-  const extras = [$("extra").value.trim(), `--max-tokens ${$("maxTokens").value}`]
-    .filter(Boolean).join(" ");
   const payload = {
     MODEL: custom || $("model").value,
     HOST: $("expose").classList.contains("on") ? "0.0.0.0" : "127.0.0.1",
     PORT: $("port").value,
     UI_PORT: $("uiPort").value,
-    EXTRA_ARGS: extras,
+    BRIDGE_PORT: $("bridgePort").value,
+    MAX_TOKENS: $("maxTokens").value,
+    EXTRA_ARGS: $("extra").value.trim(),
     restart,
   };
   $("save").disabled = $("saveRestart").disabled = true;
   $("msg").textContent = restart ? "Saving and restarting the server…" : "Saving…";
-  await fetch("/argus/config", {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(payload)});
+  let resp, result;
+  try {
+    resp = await fetch("/argus/config", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)});
+    result = await resp.json();
+  } catch (err) {
+    $("save").disabled = $("saveRestart").disabled = false;
+    $("msg").textContent = `Could not save settings: ${err.message}`;
+    return;
+  }
+  if (!resp.ok) {
+    $("save").disabled = $("saveRestart").disabled = false;
+    $("msg").textContent = result.error || `Could not save settings (HTTP ${resp.status}).`;
+    return;
+  }
   $("customModel").value = "";
-  await load();
+  if (!restart) await load();
   $("save").disabled = $("saveRestart").disabled = false;
   $("msg").textContent = restart
-    ? "Saved — the server is restarting (model downloads can take a while)."
+    ? "Saved — Argus is restarting (model downloads can take a while)."
     : "Saved. Restart the server to apply.";
+  if (restart) {
+    setTimeout(() => { location.href = result.ui_url + "/settings"; }, 1400);
+    return;
+  }
   setTimeout(() => $("msg").textContent = "", 6000);
 }
 $("save").onclick = () => save(false);

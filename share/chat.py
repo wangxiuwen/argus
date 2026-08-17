@@ -16,14 +16,21 @@ import urllib.request
 import urllib.error
 
 API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
+CONFIGURED_MODEL = os.environ.get("ARGUS_MODEL")
+try:
+    MAX_TOKENS = int(os.environ.get("ARGUS_MAX_TOKENS", "4096"))
+except ValueError:
+    MAX_TOKENS = 4096
 IMG_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic", ".tiff"}
 
 
 def get_model():
     try:
-        with urllib.request.urlopen(API + "/v1/models", timeout=3) as r:
-            return json.load(r)["data"][0]["id"]
-    except OSError:
+        with urllib.request.urlopen(API + "/health", timeout=3) as r:
+            return json.load(r)["loaded_model"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        if CONFIGURED_MODEL:
+            return CONFIGURED_MODEL
         sys.exit(f"server not reachable at {API} — start it with: argus start")
 
 
@@ -41,7 +48,7 @@ def build_content(text, images):
 
 
 def stream_chat(messages, model, thinking=False):
-    payload = {"model": model, "messages": messages, "stream": True, "max_tokens": 4096,
+    payload = {"model": model, "messages": messages, "stream": True, "max_tokens": MAX_TOKENS,
                "enable_thinking": thinking}
     req = urllib.request.Request(
         API + "/v1/chat/completions",

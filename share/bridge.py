@@ -23,6 +23,10 @@ import uuid
 
 API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
 PORT = int(os.environ.get("ARGUS_BRIDGE_PORT", "8092"))
+try:
+    MAX_TOKENS = int(os.environ.get("ARGUS_MAX_TOKENS", "4096"))
+except ValueError:
+    MAX_TOKENS = 4096
 
 DEBUG = os.environ.get("ARGUS_BRIDGE_DEBUG") == "1"
 
@@ -50,8 +54,8 @@ def loaded_model():
     if _loaded["id"] and now - _loaded["at"] < MODEL_CACHE_SECONDS:
         return _loaded["id"]
     try:
-        with urllib.request.urlopen(API + "/v1/models", timeout=5) as r:
-            model = json.load(r)["data"][0]["id"]
+        with urllib.request.urlopen(API + "/health", timeout=5) as r:
+            model = json.load(r)["loaded_model"]
             if not isinstance(model, str) or not model:
                 raise ValueError("upstream returned an empty model id")
             _loaded["id"] = model
@@ -142,11 +146,11 @@ def to_openai_messages(req):
     return msgs
 
 
-def to_openai_request(req):
+def to_openai_request(req, model=None):
     out = {
-        "model": loaded_model() or req.get("model"),
+        "model": model or loaded_model(),
         "messages": to_openai_messages(req),
-        "max_tokens": req.get("max_tokens", 4096),
+        "max_tokens": req.get("max_tokens", MAX_TOKENS),
         "stream": bool(req.get("stream")),
     }
     for src, dst in (("temperature", "temperature"), ("top_p", "top_p")):
@@ -346,7 +350,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.route in ("/health", "/v1/health"):
-            self._json({"ok": True, "upstream": API})
+            model = loaded_model()
+            self._json({"ok": bool(model), "upstream": API, "model": model})
         elif self.route == "/v1/models":
             try:
                 with urllib.request.urlopen(API + "/v1/models", timeout=5) as r:
@@ -361,7 +366,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _passthrough_openai(self, req):
         """OpenAI-protocol clients (codex, aider, …) also send their own model
         names, so the same pinning applies; otherwise forward untouched."""
-        req["model"] = loaded_model() or req.get("model")
+        model = loaded_model()
+        if not model:
+            return self._error("the model server is not ready", 503, "overloaded_error")
+        req["model"] = model
         body = json.dumps(req).encode()
         upstream_req = urllib.request.Request(
             API + self.path, data=body, headers={"Content-Type": "application/json"})
@@ -398,12 +406,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data)
 
     def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return self._error("invalid Content-Length", 400, "invalid_request_error")
+        if not 0 <= length <= 50_000_000:
+            return self._error("request body is too large", 413, "invalid_request_error")
         raw = self.rfile.read(length)
         try:
             req = json.loads(raw or b"{}")
-        except json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             return self._error("invalid JSON", 400, "invalid_request_error")
+        if not isinstance(req, dict):
+            return self._error("request body must be an object", 400,
+                               "invalid_request_error")
 
         # OpenAI-shaped endpoints are proxied with the model pinned
         if self.route.endswith(("/chat/completions", "/completions", "/embeddings")):
@@ -420,9 +436,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         debug("POST", self.path, "client model:", req.get("model"),
               "stream:", bool(req.get("stream")), "tools:", len(req.get("tools") or []),
               "msgs:", len(req.get("messages") or []))
-        payload = to_openai_request(req)
+        model = loaded_model()
+        if not model:
+            return self._error("the model server is not ready", 503, "overloaded_error")
+        payload = to_openai_request(req, model)
         debug("roles:", [m["role"] for m in payload["messages"]])
-        model = payload.get("model") or "argus"
         body = json.dumps(payload).encode()
         upstream_req = urllib.request.Request(
             API + "/v1/chat/completions", data=body,

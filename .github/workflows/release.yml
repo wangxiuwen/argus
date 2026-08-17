@@ -30,6 +30,8 @@ jobs:
         run: make dist VERSION="${RELEASE_TAG#v}"
 
       - name: Verify the archive contains what it should
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -e
           tar -tzf dist/*.tar.gz > files.txt
@@ -37,6 +39,12 @@ jobs:
                       ./share/ui.py ./share/bridge.py ./share/launch.py ./install.sh; do
             grep -qx "$want" files.txt || { echo "missing $want"; exit 1; }
           done
+          VERSION="${RELEASE_TAG#v}"
+          BUNDLE_VERSION="$(plutil -extract CFBundleShortVersionString raw -o - \
+            .build/stage/Argus.app/Contents/Info.plist)"
+          test "$BUNDLE_VERSION" = "$VERSION" || {
+            echo "bundle version $BUNDLE_VERSION does not match $VERSION"; exit 1;
+          }
           echo "archive contents ok"
 
       - name: Publish release

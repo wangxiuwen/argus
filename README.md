@@ -100,6 +100,14 @@ local model's prompt. To load your full Claude configuration instead:
 ARGUS_CLAUDE_FULL=1 argus launch claude
 ```
 
+OpenCode also uses an isolated local-only provider by default, so existing
+cloud credentials and MCP configuration are not loaded accidentally. To keep
+your normal OpenCode plugins/MCPs while still forcing inference through Argus:
+
+```bash
+ARGUS_OPENCODE_FULL=1 argus launch opencode
+```
+
 ### Configuration
 
 `~/.config/argus/config` (created on demand, `KEY=VALUE` lines):
@@ -108,10 +116,16 @@ ARGUS_CLAUDE_FULL=1 argus launch claude
 MODEL=mlx-community/Qwen3.8-27B-bf16
 PORT=8090
 HOST=127.0.0.1
-EXTRA_ARGS=--max-tokens 4096
+UI_PORT=8091
+BRIDGE_PORT=8092
+MAX_TOKENS=4096
+EXTRA_ARGS=--kv-bits 8
 ```
 
-`EXTRA_ARGS` is passed straight to `mlx_vlm.server` — see `mlx_vlm.server --help` for KV-cache quantization, thinking budget, draft models and more.
+`MAX_TOKENS` controls both Argus clients and the server-side generation cap.
+`EXTRA_ARGS` is passed straight to `mlx_vlm.server` — see
+`mlx_vlm.server --help` for KV-cache quantization, thinking budget, draft
+models and more.
 
 ### Picking a model
 

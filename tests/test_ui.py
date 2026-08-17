@@ -51,6 +51,26 @@ class ConfigTests(unittest.TestCase):
             ui.write_config({"UI_PORT": "8090"})
 
 
+class ModelCatalogTests(unittest.TestCase):
+    def test_known_variant_metadata_wins_over_an_incomplete_cache_entry(self):
+        q4 = "mlx-community/Qwen3.8-27B-4bit"
+        cached = {"id": q4, "label": "Qwen3.8-27B-4bit (0.0 GB)",
+                  "gb": 0.0, "downloaded": False, "local": True}
+        known = {"id": q4, "label": "Qwen3.8-27B 4bit (~16 GB)",
+                 "gb": 16.1, "downloaded": False}
+        with mock.patch.object(ui, "local_models", return_value=[cached]), \
+             mock.patch.object(ui, "variant_list", return_value=[known]), \
+             mock.patch.object(ui, "current_model", return_value=q4):
+            catalog = ui.model_catalog()
+        self.assertEqual(catalog, {"current": q4, "variants": [known]})
+
+    def test_partial_known_variant_is_visible_but_not_marked_downloaded(self):
+        with mock.patch.object(ui, "blob_bytes", return_value=(0, 2_000_000_000, 0)):
+            q4 = next(v for v in ui.variant_list() if v["id"].endswith("-4bit"))
+        self.assertEqual(q4["label"], "Qwen3.8-27B 4bit (~16 GB)")
+        self.assertFalse(q4["downloaded"])
+
+
 class BrowserOriginTests(unittest.TestCase):
     def test_cli_and_same_origin_browser_requests_are_allowed(self):
         self.assertTrue(ui.trusted_browser_origin(None, 8091))

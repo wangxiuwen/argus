@@ -120,6 +120,26 @@ def local_models():
     return out
 
 
+def model_catalog():
+    """Models shown by the picker, with curated metadata taking precedence.
+
+    A known variant can have a snapshot/config on disk while all weight blobs
+    are still incomplete.  In that case local_models() reports a misleading
+    0.0 GB entry; list curated variants first so their expected size and label
+    survive de-duplication.
+    """
+    cur = current_model()
+    seen, variants = set(), []
+    for model in variant_list() + local_models():
+        if model["id"] in seen:
+            continue
+        seen.add(model["id"])
+        variants.append(model)
+    if cur not in seen:
+        variants.insert(0, {"label": cur, "id": cur, "downloaded": False})
+    return {"current": cur, "variants": variants}
+
+
 def search_hub(query, limit=20):
     """Search Hugging Face for MLX-format models matching the query."""
     q = urllib.parse.quote(query)
@@ -464,16 +484,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 out["target"] = current_model()
             self._send_json(out)
         elif self.path == "/argus/models":
-            cur = current_model()
-            seen, variants = set(), []
-            for v in local_models() + variant_list():
-                if v["id"] in seen:
-                    continue
-                seen.add(v["id"])
-                variants.append(v)
-            if cur not in seen:
-                variants.insert(0, {"label": cur, "id": cur, "downloaded": False})
-            self._send_json({"current": cur, "variants": variants})
+            self._send_json(model_catalog())
         elif self.path.startswith("/argus/search"):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("q", [""])[0]
             self._send_json({"results": search_hub(q) if len(q) >= 2 else []})

@@ -139,14 +139,34 @@ cmd_ui() {
   [[ "$1" == "start" ]] || open "http://127.0.0.1:$UI_PORT" 2>/dev/null
 }
 
+bridge_pid() {
+  local pid=""
+  if [[ -f "$BRIDGE_PIDFILE" ]]; then
+    pid="$(cat "$BRIDGE_PIDFILE")"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "$pid"
+      return 0
+    fi
+  fi
+  # Recover a bridge whose pidfile was lost, but never adopt an unrelated
+  # process merely because it happens to own the configured port.
+  pid="$(lsof -tiTCP:"$BRIDGE_PORT" -sTCP:LISTEN 2>/dev/null | head -n 1)"
+  if [[ -n "$pid" ]] && ps -p "$pid" -o command= 2>/dev/null | grep -Fq "$SHARE/bridge.py"; then
+    echo "$pid"
+    return 0
+  fi
+  return 1
+}
+
 bridge_running() {
-  [[ -f "$BRIDGE_PIDFILE" ]] && kill -0 "$(cat "$BRIDGE_PIDFILE")" 2>/dev/null
+  bridge_pid >/dev/null
 }
 
 cmd_bridge() {
   case "$1" in
     stop)
-      if bridge_running; then kill "$(cat "$BRIDGE_PIDFILE")"; rm -f "$BRIDGE_PIDFILE"; echo "bridge stopped"
+      local pid
+      if pid="$(bridge_pid)"; then kill "$pid"; rm -f "$BRIDGE_PIDFILE"; echo "bridge stopped"
       else echo "bridge not running"; fi
       ;;
     status)
@@ -155,15 +175,24 @@ cmd_bridge() {
       else echo "bridge not running"; fi
       ;;
     *)
-      if bridge_running; then
+      local pid
+      if pid="$(bridge_pid)"; then
+        echo "$pid" > "$BRIDGE_PIDFILE"
         echo "bridge already running: http://127.0.0.1:$BRIDGE_PORT"
         return 0
       fi
       ARGUS_API="http://$HOST:$PORT" ARGUS_BRIDGE_PORT="$BRIDGE_PORT" \
         nohup python3 "$SHARE/bridge.py" >> "$LOG" 2>&1 &
-      echo $! > "$BRIDGE_PIDFILE"
+      pid=$!
+      echo "$pid" > "$BRIDGE_PIDFILE"
       sleep 0.6
-      echo "bridge on http://127.0.0.1:$BRIDGE_PORT (Anthropic protocol → http://$HOST:$PORT)"
+      if kill -0 "$pid" 2>/dev/null && curl -s -m 2 "http://127.0.0.1:$BRIDGE_PORT/health" >/dev/null 2>&1; then
+        echo "bridge on http://127.0.0.1:$BRIDGE_PORT (Anthropic protocol → http://$HOST:$PORT)"
+      else
+        rm -f "$BRIDGE_PIDFILE"
+        echo "bridge failed to start — see: argus log"
+        return 1
+      fi
       ;;
   esac
 }

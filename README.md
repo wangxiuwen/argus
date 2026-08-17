@@ -74,6 +74,32 @@ argus download    # pre-download the configured model
 argus config      # show effective settings
 ```
 
+### Coding tools
+
+Argus can launch coding agents against the local model. The compatibility
+bridge keeps each client from replacing the model already loaded in memory.
+
+```bash
+argus launch                         # list supported tools and install status
+argus launch codex                   # Codex CLI
+argus launch aider --message "help" # aider (extra arguments pass through)
+argus launch opencode                # OpenCode
+argus launch claude                  # Claude Code via Anthropic Messages API
+argus launch shell                   # shell with local API variables set
+argus bridge status                  # inspect the bridge separately
+```
+
+The bridge listens on `127.0.0.1:8092` by default and starts automatically.
+Set `BRIDGE_PORT` in `~/.config/argus/config` to change it.
+
+Claude Code starts in `--bare` mode by default. This retains its core coding
+tools while preventing a large user skill/MCP setup from overwhelming the
+local model's prompt. To load your full Claude configuration instead:
+
+```bash
+ARGUS_CLAUDE_FULL=1 argus launch claude
+```
+
 ### Configuration
 
 `~/.config/argus/config` (created on demand, `KEY=VALUE` lines):

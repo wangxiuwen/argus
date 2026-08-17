@@ -238,7 +238,7 @@
   <div id="launch">
     <div class="wrap">
       <h2>Launch</h2>
-      <div class="sub">Copy a command and run it in your terminal — these point the tool at Argus instead of a cloud API.</div>
+      <div class="sub">Copy a command and run it in your terminal — coding tools use the Argus bridge so they keep the loaded local model.</div>
       <div id="cards"></div>
     </div>
   </div>
@@ -387,9 +387,13 @@ const LAUNCH = api => [
   {icon: "⬢", name: "OpenAI Node SDK", desc: "Same for JavaScript and TypeScript",
    cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=argus node your_script.mjs`},
   {icon: "⌘", name: "Codex CLI", desc: "OpenAI's coding agent against your local model",
-   cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=argus codex`},
+   cmd: `argus launch codex`},
   {icon: "✎", name: "aider", desc: "Pair programming in your terminal",
-   cmd: `aider --openai-api-base ${api} --openai-api-key argus --model openai/MODEL`},
+   cmd: `argus launch aider`},
+  {icon: "◇", name: "OpenCode", desc: "Open-source coding agent against your local model",
+   cmd: `argus launch opencode`},
+  {icon: "✦", name: "Claude Code", desc: "Anthropic's coding agent in local-friendly bare mode",
+   cmd: `argus launch claude`},
   {icon: "⚙", name: "Any OpenAI-compatible app", desc: "Open WebUI, Continue, Zed, Raycast — paste these two values",
    cmd: `Base URL: ${api}\nAPI key:  argus   (any non-empty string works)`},
 ];
@@ -643,6 +647,9 @@ async function send() {
   messages.push({role: "user", content});
   persistCurrent();
   const b = bubble("bot", "");
+  // always ask for the model the server has loaded: mlx_vlm.server treats a
+  // different name as "unload and load that instead", which stalls for minutes
+  const serving = lastHealth.model || model;
 
   // show pulsing dots + elapsed time until the first token arrives, and let Stop cancel
   const wait = document.createElement("span");
@@ -668,7 +675,7 @@ async function send() {
   try {
     const resp = await fetch("/v1/chat/completions", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({model, messages, stream: true, max_tokens: 4096,
+      body: JSON.stringify({model: serving, messages, stream: true, max_tokens: 4096,
         enable_thinking: thinking}),
       signal: ctl.signal,
     });

@@ -2,3 +2,5 @@
 !Argus/
 .DS_Store
 dist/
+__pycache__/
+*.py[cod]

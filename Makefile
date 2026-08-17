@@ -5,12 +5,20 @@ BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin
 STAGE   = .build/stage
 DIST    = dist/argus-$(VERSION)-macos-arm64.tar.gz
+SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html \
+	share/launch.py share/bridge.py share/prune.py
 
-.PHONY: build install uninstall clean dist
+.PHONY: build test install uninstall clean dist
 
 build:
 	mkdir -p .build
 	swiftc -O -o $(OUT) Argus/main.swift
+
+test:
+	python3 -m unittest discover -s tests -v
+	python3 -m py_compile share/*.py
+	zsh -n bin/argus
+	sh -n install.sh
 
 install: build
 	mkdir -p $(BUNDLE)/Contents/MacOS $(BIN_DIR)
@@ -19,8 +27,7 @@ install: build
 	codesign --force --sign - $(BUNDLE)
 	install -m 755 bin/argus $(BIN_DIR)/argus
 	mkdir -p $(HOME)/.local/share/argus
-	install -m 644 share/chat.py share/ui.py share/ui.html share/settings.html \
-		share/launch.py share/bridge.py share/prune.py $(HOME)/.local/share/argus/
+	install -m 644 $(SHARE_FILES) $(HOME)/.local/share/argus/
 	@echo "installed: $(BUNDLE) and $(BIN_DIR)/argus"
 	@echo "open the tray app with: open $(BUNDLE)"
 
@@ -36,7 +43,7 @@ dist: build
 	cp Info.plist $(STAGE)/$(APP).app/Contents/
 	codesign --force --sign - $(STAGE)/$(APP).app
 	cp bin/argus $(STAGE)/bin/
-	cp share/* $(STAGE)/share/
+	cp $(SHARE_FILES) $(STAGE)/share/
 	cp install.sh README.md LICENSE $(STAGE)/
 	chmod +x $(STAGE)/install.sh $(STAGE)/bin/argus
 	tar -czf $(DIST) -C $(STAGE) .

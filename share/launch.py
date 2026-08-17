@@ -2,22 +2,22 @@
 """argus launch — run a coding agent or client against the local Argus server.
 
 Sets the right environment for the tool and execs it, so the tool talks to
-Argus instead of a cloud API. Tools speaking the OpenAI protocol get
-OPENAI_BASE_URL; tools speaking the Anthropic protocol get ANTHROPIC_BASE_URL
-pointed at the Anthropic-compatible bridge.
+Argus instead of a cloud API. Both protocols go through the compatibility
+bridge, which pins client requests to the model already loaded by Argus.
 """
 import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 
 API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
 BRIDGE = os.environ.get("ARGUS_BRIDGE", "http://127.0.0.1:8092")
 KEY = "argus"
 
-# protocol: "openai" uses the server directly, "anthropic" goes through the bridge
+# The protocol controls which client environment variables are populated.
 TOOLS = {
     "codex": {
         "name": "Codex CLI", "bin": "codex", "protocol": "openai",
@@ -28,8 +28,8 @@ TOOLS = {
         "name": "aider", "bin": "aider", "protocol": "openai",
         "install": "pip install aider-install && aider-install",
         "desc": "Pair programming in your terminal",
-        "args": lambda model: ["--openai-api-base", f"{API}/v1", "--openai-api-key", KEY,
-                               "--model", f"openai/{model}"],
+        "args": lambda model, base: ["--openai-api-base", base, "--openai-api-key", KEY,
+                                     "--model", f"openai/{model}"],
     },
     "opencode": {
         "name": "OpenCode", "bin": "opencode", "protocol": "openai",
@@ -65,6 +65,20 @@ def bridge_up():
         return False
 
 
+def ensure_bridge():
+    """Start the compatibility bridge if it isn't up yet."""
+    if bridge_up():
+        return True
+    subprocess.Popen([os.path.expanduser("~/.local/bin/argus"), "bridge", "start"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    for _ in range(30):
+        if bridge_up():
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def list_tools():
     print("argus launch <tool> — run a tool against your local model\n")
     for key, t in TOOLS.items():
@@ -74,6 +88,20 @@ def list_tools():
         if not have and t["install"]:
             print(f"    {'':9s} not installed — {t['install']}")
     print("\n✓ = found on your PATH")
+
+
+def command_args(key, binary, tool, model, where, extra, claude_full=False):
+    """Build the command line without launching it (also keeps this testable)."""
+    args = [binary]
+    if callable(tool.get("args")):
+        args += tool["args"](model, where)
+    # A normal Claude Code startup can inject dozens of user/MCP tools and a
+    # very large system prompt.  That is fine for hosted models, but makes a
+    # local model spend minutes in prefill.  Bare mode retains Claude's core
+    # coding tools while skipping those customizations.
+    if key == "claude" and not claude_full and "--bare" not in extra:
+        args.append("--bare")
+    return args + extra
 
 
 def main(argv):
@@ -103,40 +131,29 @@ def main(argv):
 
     env = dict(os.environ)
     if tool["protocol"] == "anthropic":
-        if not bridge_up():
-            print("starting the Anthropic bridge…")
-            subprocess.Popen([os.path.expanduser("~/.local/bin/argus"), "bridge", "start"],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             start_new_session=True)
-            for _ in range(30):
-                if bridge_up():
-                    break
-                import time
-                time.sleep(0.5)
-            if not bridge_up():
-                print("the bridge did not come up — see: argus log")
-                return 1
+        if not ensure_bridge():
+            print("the bridge did not come up — see: argus log")
+            return 1
         env["ANTHROPIC_BASE_URL"] = BRIDGE
         env["ANTHROPIC_AUTH_TOKEN"] = KEY
         env["ANTHROPIC_API_KEY"] = KEY
-        env["ANTHROPIC_MODEL"] = model
-        env["ANTHROPIC_SMALL_FAST_MODEL"] = model
-        env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = model
-        env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model
-        env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = model
+        # deliberately NOT setting ANTHROPIC_MODEL to the repo id: the client
+        # refuses model names it doesn't recognize, and the bridge pins every
+        # request to the loaded model anyway
         env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
         where = BRIDGE
     else:
-        env["OPENAI_BASE_URL"] = f"{API}/v1"
-        env["OPENAI_API_BASE"] = f"{API}/v1"
+        # go through the bridge for OpenAI clients too: it pins the model, so a
+        # client sending its own model name cannot make the server swap models
+        base = f"{BRIDGE}/v1" if ensure_bridge() else f"{API}/v1"
+        env["OPENAI_BASE_URL"] = base
+        env["OPENAI_API_BASE"] = base
         env["OPENAI_API_KEY"] = KEY
         env["OPENAI_MODEL"] = model
-        where = f"{API}/v1"
+        where = base
 
-    args = [binary]
-    if callable(tool.get("args")):
-        args += tool["args"](model)
-    args += extra
+    args = command_args(key, binary, tool, model, where, extra,
+                        claude_full=os.environ.get("ARGUS_CLAUDE_FULL") == "1")
 
     print(f"launching {tool['name']} → {where}  (model: {model})")
     os.execve(binary, args, env)

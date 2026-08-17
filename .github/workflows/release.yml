@@ -1,0 +1,66 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and release"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Test
+        run: make test
+
+      - name: Build release archive
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: make dist VERSION="${RELEASE_TAG#v}"
+
+      - name: Verify the archive contains what it should
+        run: |
+          set -e
+          tar -tzf dist/*.tar.gz > files.txt
+          for want in ./Argus.app/Contents/MacOS/Argus ./bin/argus ./share/ui.html \
+                      ./share/ui.py ./share/bridge.py ./share/launch.py ./install.sh; do
+            grep -qx "$want" files.txt || { echo "missing $want"; exit 1; }
+          done
+          echo "archive contents ok"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" dist/*.tar.gz \
+            --title "Argus $TAG" \
+            --generate-notes \
+            --notes "$(cat <<'EOF'
+### Install
+
+```sh
+tar -xzf argus-*-macos-arm64.tar.gz
+./install.sh
+open ~/Applications/Argus.app
+```
+
+Requires an Apple Silicon Mac and [mlx-vlm](https://github.com/Blaizzy/mlx-vlm):
+`uv tool install -p 3.12 mlx-vlm`
+
+The app is ad-hoc signed, not notarized. `install.sh` clears the quarantine
+flag for you; if you copy the app by hand, run
+`xattr -dr com.apple.quarantine ~/Applications/Argus.app`.
+EOF
+)" || gh release upload "$TAG" dist/*.tar.gz --clobber

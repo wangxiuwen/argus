@@ -16,12 +16,51 @@ import json
 import os
 import socketserver
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
 
 API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
 PORT = int(os.environ.get("ARGUS_BRIDGE_PORT", "8092"))
+
+DEBUG = os.environ.get("ARGUS_BRIDGE_DEBUG") == "1"
+
+# Only coalesce requests arriving at nearly the same time.  A longer cache can
+# resurrect the previous model immediately after `argus use` restarts the
+# server, causing mlx-vlm to swap back to the old weights.
+MODEL_CACHE_SECONDS = 0.5
+_loaded = {"id": None, "at": 0.0}
+
+
+def debug(*parts):
+    if DEBUG:
+        print("[bridge]", *parts, file=sys.stderr, flush=True)
+
+
+def loaded_model():
+    """The model the server currently has in memory.
+
+    Clients send their own model names ("claude-sonnet-4-5", "gpt-5-codex").
+    mlx_vlm.server reads that field as an instruction to unload and load that
+    repo instead, which either stalls for minutes or fails outright, so every
+    request the bridge forwards is pinned to what is already loaded.
+    """
+    now = time.monotonic()
+    if _loaded["id"] and now - _loaded["at"] < MODEL_CACHE_SECONDS:
+        return _loaded["id"]
+    try:
+        with urllib.request.urlopen(API + "/v1/models", timeout=5) as r:
+            model = json.load(r)["data"][0]["id"]
+            if not isinstance(model, str) or not model:
+                raise ValueError("upstream returned an empty model id")
+            _loaded["id"] = model
+            _loaded["at"] = now
+    except (OSError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        # Never pin a stale model after a server restart or model switch.
+        _loaded["id"] = None
+        _loaded["at"] = 0.0
+    return _loaded["id"]
 
 
 # --------------------------------------------------------------------------- #
@@ -41,13 +80,20 @@ def _text_of(blocks):
 
 def to_openai_messages(req):
     msgs = []
-    system = req.get("system")
-    if system:
-        msgs.append({"role": "system", "content": _text_of(system)})
+    # the upstream server rejects a system message that is not the first one, and
+    # clients do put system-role entries inside messages, so collect them all and
+    # emit a single leading system message
+    system_parts = []
+    if req.get("system"):
+        system_parts.append(_text_of(req["system"]))
 
     for m in req.get("messages", []):
         role = m.get("role", "user")
         content = m.get("content")
+
+        if role == "system":
+            system_parts.append(_text_of(content))
+            continue
 
         if isinstance(content, str):
             msgs.append({"role": role, "content": content})
@@ -89,12 +135,16 @@ def to_openai_messages(req):
             only_text = all(p["type"] == "text" for p in parts)
             msgs.append({"role": role,
                          "content": _text_of(parts) if only_text else parts})
+
+    system = "\n\n".join(p for p in system_parts if p)
+    if system:
+        msgs.insert(0, {"role": "system", "content": system})
     return msgs
 
 
 def to_openai_request(req):
     out = {
-        "model": req.get("model"),
+        "model": loaded_model() or req.get("model"),
         "messages": to_openai_messages(req),
         "max_tokens": req.get("max_tokens", 4096),
         "stream": bool(req.get("stream")),
@@ -287,12 +337,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _error(self, message, code=500, kind="api_error"):
+        debug("error", code, kind, message[:400])
         self._json({"type": "error", "error": {"type": kind, "message": message}}, code)
 
+    @property
+    def route(self):
+        return self.path.split("?", 1)[0].rstrip("/")
+
     def do_GET(self):
-        if self.path in ("/health", "/v1/health"):
+        if self.route in ("/health", "/v1/health"):
             self._json({"ok": True, "upstream": API})
-        elif self.path == "/v1/models":
+        elif self.route == "/v1/models":
             try:
                 with urllib.request.urlopen(API + "/v1/models", timeout=5) as r:
                     data = json.load(r)
@@ -301,7 +356,46 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except OSError as e:
                 self._error(f"upstream unreachable: {e}", 502)
         else:
-            self._error("not found", 404, "not_found_error")
+            self._error(f"no route for GET {self.route}", 404, "not_found_error")
+
+    def _passthrough_openai(self, req):
+        """OpenAI-protocol clients (codex, aider, …) also send their own model
+        names, so the same pinning applies; otherwise forward untouched."""
+        req["model"] = loaded_model() or req.get("model")
+        body = json.dumps(req).encode()
+        upstream_req = urllib.request.Request(
+            API + self.path, data=body, headers={"Content-Type": "application/json"})
+        try:
+            upstream = urllib.request.urlopen(upstream_req, timeout=900)
+        except urllib.error.HTTPError as e:
+            data = e.read()
+            self.send_response(e.code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
+        except OSError as e:
+            return self._error(f"cannot reach the model server at {API}: {e}", 502)
+
+        ctype = upstream.headers.get("Content-Type", "application/json")
+        self.send_response(upstream.status)
+        self.send_header("Content-Type", ctype)
+        if "text/event-stream" in ctype:
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            try:
+                for line in upstream:
+                    self.wfile.write(f"{len(line):x}\r\n".encode() + line + b"\r\n")
+                    self.wfile.flush()
+                self.wfile.write(b"0\r\n\r\n")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        else:
+            data = upstream.read()
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -311,15 +405,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._error("invalid JSON", 400, "invalid_request_error")
 
-        if self.path.rstrip("/").endswith("count_tokens"):
+        # OpenAI-shaped endpoints are proxied with the model pinned
+        if self.route.endswith(("/chat/completions", "/completions", "/embeddings")):
+            return self._passthrough_openai(req)
+
+        if self.route.endswith("count_tokens"):
             # rough estimate: clients only use it for budgeting
             text = json.dumps(req.get("messages", "")) + json.dumps(req.get("system", ""))
             return self._json({"input_tokens": max(1, len(text) // 4)})
 
-        if not self.path.rstrip("/").endswith("messages"):
-            return self._error("not found", 404, "not_found_error")
+        if not self.route.endswith("messages"):
+            return self._error(f"no route for POST {self.route}", 404, "not_found_error")
 
+        debug("POST", self.path, "client model:", req.get("model"),
+              "stream:", bool(req.get("stream")), "tools:", len(req.get("tools") or []),
+              "msgs:", len(req.get("messages") or []))
         payload = to_openai_request(req)
+        debug("roles:", [m["role"] for m in payload["messages"]])
         model = payload.get("model") or "argus"
         body = json.dumps(payload).encode()
         upstream_req = urllib.request.Request(
@@ -362,6 +464,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # CLI users cancel generations routinely.  Do not fill argus.log with a
+        # socketserver traceback after the bridge has already handled the abort.
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError)):
+            debug("client disconnected", client_address[0])
+            return
+        super().handle_error(request, client_address)
 
 
 if __name__ == "__main__":

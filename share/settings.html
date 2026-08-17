@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Argus Settings</title>
+<style>
+  :root {
+    --bg: #ffffff; --text: #18181b; --muted: #8a8a91; --border: #e6e6e9;
+    --field: #f2f2f4; --hover: #eaeaee; --accent: #18181b; --accent-text: #ffffff;
+    --on: #18181b; --off: #d2d2d8; --knob: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b1e; --text: #ececf0; --muted: #8e8e97; --border: #2b2b31;
+      --field: #26262b; --hover: #303038; --accent: #ececf0; --accent-text: #18181b;
+      --on: #ececf0; --off: #45454e; --knob: #1b1b1e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); padding: 22px 26px 26px;
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .row {
+    display: flex; align-items: flex-start; gap: 14px; padding: 15px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .row:last-of-type { border-bottom: none; }
+  .ic { width: 20px; text-align: center; opacity: .7; font-size: 15px; padding-top: 1px; }
+  .body { flex: 1; min-width: 0; }
+  .title { font-weight: 600; font-size: 14px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .ctl { margin-top: 9px; display: flex; gap: 8px; align-items: center; }
+  select, input[type=text], input[type=number] {
+    background: var(--field); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 9px; font: inherit; font-size: 13px; outline: none;
+    max-width: 100%;
+  }
+  select { flex: 1; }
+  input[type=number] { width: 92px; }
+  input[type=text] { flex: 1; }
+  button {
+    border: 1px solid var(--border); background: var(--field); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  /* toggle */
+  .sw { width: 42px; height: 24px; border-radius: 12px; background: var(--off); position: relative;
+        cursor: pointer; flex: none; transition: background .15s; border: none; padding: 0; }
+  .sw.on { background: var(--on); }
+  .sw::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--knob); transition: transform .15s;
+  }
+  .sw.on::after { transform: translateX(18px); }
+  input[type=range] { flex: 1; accent-color: var(--on); }
+  .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 2px; }
+  #foot {
+    display: flex; align-items: center; gap: 10px; margin-top: 20px;
+    border-top: 1px solid var(--border); padding-top: 16px;
+  }
+  #msg { color: var(--muted); font-size: 12.5px; flex: 1; }
+  .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--border);
+           border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
+</style>
+</head>
+<body>
+
+<div class="row">
+  <span class="ic">◆</span>
+  <div class="body">
+    <div class="title">Model</div>
+    <div class="hint">Vision-language model served to the API. Switching downloads the weights if you don't have them.</div>
+    <div class="ctl"><select id="model"></select></div>
+    <div class="ctl"><input type="text" id="customModel" placeholder="Or a Hugging Face repo id, e.g. mlx-community/…"></div>
+  </div>
+</div>
+
+<div class="row">
+  <span class="ic">⏻</span>
+  <div class="body">
+    <div class="title">Launch at login</div>
+    <div class="hint">Start the Argus menu bar app when you log in.</div>
+  </div>
+  <button class="sw" id="login"></button>
+</div>
+
+<div class="row">
+  <span class="ic">≋</span>
+  <div class="body">
+    <div class="title">Expose to the network</div>
+    <div class="hint">Let other devices reach the API. Off means localhost only.</div>
+  </div>
+  <button class="sw" id="expose"></button>
+</div>
+
+<div class="row">
+  <span class="ic">⇄</span>
+  <div class="body">
+    <div class="title">Ports</div>
+    <div class="hint">API server and the chat interface.</div>
+    <div class="ctl">
+      <label>API <input type="number" id="port" min="1024" max="65535"></label>
+      <label>UI <input type="number" id="uiPort" min="1024" max="65535"></label>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <span class="ic">⚙</span>
+  <div class="body">
+    <div class="title">Reply length limit</div>
+    <div class="hint">Maximum tokens the model may generate in one reply.</div>
+    <div class="ctl"><input type="range" id="maxTokens" min="512" max="32768" step="512"><span id="maxTokensVal"></span></div>
+    <div class="ticks"><span>512</span><span>8k</span><span>16k</span><span>24k</span><span>32k</span></div>
+  </div>
+</div>
+
+<div class="row">
+  <span class="ic">▤</span>
+  <div class="body">
+    <div class="title">Model location<span class="badge" id="cacheSize"></span></div>
+    <div class="hint" id="cachePath"></div>
+    <div class="ctl"><button id="reveal">Show in Finder</button></div>
+  </div>
+</div>
+
+<div class="row">
+  <span class="ic">⌥</span>
+  <div class="body">
+    <div class="title">Extra server flags</div>
+    <div class="hint">Passed to mlx_vlm.server verbatim — KV cache quantization, draft models, etc.</div>
+    <div class="ctl"><input type="text" id="extra" placeholder="--kv-bits 8 --enable-thinking"></div>
+  </div>
+</div>
+
+<div id="foot">
+  <span id="msg"></span>
+  <button id="save">Save</button>
+  <button class="primary" id="saveRestart">Save &amp; Restart</button>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let cfg = {}, variants = [];
+
+/* native bridge for launch-at-login (handled by the app) */
+function nativeCall(action, value) {
+  window.webkit?.messageHandlers?.argus?.postMessage({action, value});
+}
+window.setLoginState = on => $("login").classList.toggle("on", !!on);
+
+function splitExtra(extra) {
+  const m = /--max-tokens\s+(\d+)/.exec(extra || "");
+  return {
+    maxTokens: m ? parseInt(m[1]) : 4096,
+    rest: (extra || "").replace(/--max-tokens\s+\d+/, "").trim(),
+  };
+}
+
+async function load() {
+  const d = await fetch("/argus/config").then(r => r.json());
+  cfg = d.config; variants = d.variants;
+  const sel = $("model");
+  sel.innerHTML = "";
+  for (const v of variants) {
+    const o = document.createElement("option");
+    o.value = v.id;
+    o.textContent = v.label + (v.downloaded ? "  ✓ downloaded" : "  ⤓ not downloaded");
+    sel.append(o);
+  }
+  if (!variants.some(v => v.id === cfg.MODEL)) {
+    const o = document.createElement("option");
+    o.value = cfg.MODEL; o.textContent = cfg.MODEL;
+    sel.append(o);
+  }
+  sel.value = cfg.MODEL;
+  $("expose").classList.toggle("on", cfg.HOST === "0.0.0.0");
+  $("port").value = cfg.PORT;
+  $("uiPort").value = cfg.UI_PORT;
+  const {maxTokens, rest} = splitExtra(cfg.EXTRA_ARGS);
+  $("maxTokens").value = maxTokens;
+  $("maxTokensVal").textContent = maxTokens;
+  $("extra").value = rest;
+  $("cachePath").textContent = d.cache.path;
+  $("cacheSize").textContent = d.cache.size;
+  nativeCall("getLogin");
+}
+
+$("maxTokens").oninput = e => $("maxTokensVal").textContent = e.target.value;
+$("expose").onclick = () => $("expose").classList.toggle("on");
+$("login").onclick = () => {
+  const on = !$("login").classList.contains("on");
+  $("login").classList.toggle("on", on);
+  nativeCall("setLogin", on);
+};
+$("reveal").onclick = () => fetch("/argus/reveal", {method: "POST"});
+
+async function save(restart) {
+  const custom = $("customModel").value.trim();
+  const extras = [$("extra").value.trim(), `--max-tokens ${$("maxTokens").value}`]
+    .filter(Boolean).join(" ");
+  const payload = {
+    MODEL: custom || $("model").value,
+    HOST: $("expose").classList.contains("on") ? "0.0.0.0" : "127.0.0.1",
+    PORT: $("port").value,
+    UI_PORT: $("uiPort").value,
+    EXTRA_ARGS: extras,
+    restart,
+  };
+  $("save").disabled = $("saveRestart").disabled = true;
+  $("msg").textContent = restart ? "Saving and restarting the server…" : "Saving…";
+  await fetch("/argus/config", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)});
+  $("customModel").value = "";
+  await load();
+  $("save").disabled = $("saveRestart").disabled = false;
+  $("msg").textContent = restart
+    ? "Saved — the server is restarting (model downloads can take a while)."
+    : "Saved. Restart the server to apply.";
+  setTimeout(() => $("msg").textContent = "", 6000);
+}
+$("save").onclick = () => save(false);
+$("saveRestart").onclick = () => save(true);
+load();
+</script>
+</body>
+</html>

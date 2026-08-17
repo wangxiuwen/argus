@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import UniformTypeIdentifiers
 import WebKit
 
 // Argus — macOS menu bar app to start/stop a local mlx-vlm server.
@@ -28,7 +29,7 @@ struct Config {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScriptMessageHandler {
     var statusItem: NSStatusItem!
     var timer: Timer?
     var config = Config.load()
@@ -137,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runCtl("ui", "start")
         if chatWindow == nil {
             let web = WKWebView(frame: .zero)
+            web.uiDelegate = self  // required, or the page's file input silently does nothing
             let win = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 920, height: 720),
                 styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -158,6 +160,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         chatWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    func webView(_ webView: WKWebView,
+                 runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.allowedContentTypes = [.image]
+        panel.message = "Choose an image to attach"
+        let done: (NSApplication.ModalResponse) -> Void = { resp in
+            completionHandler(resp == .OK ? panel.urls : nil)
+        }
+        if let win = chatWindow {
+            panel.beginSheetModal(for: win, completionHandler: done)
+        } else {
+            panel.begin(completionHandler: done)
+        }
     }
 
     var uiPort: String {
@@ -190,16 +212,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refresh() }
     }
 
+    var settingsWindow: NSWindow?
+    var settingsWebView: WKWebView?
+
     @objc func openSettings() {
-        let path = NSString(string: "~/.config/argus/config").expandingTildeInPath
-        if !FileManager.default.fileExists(atPath: path) {
-            try? "MODEL=\(config.model)\nPORT=\(config.port)\nHOST=\(config.host)\nUI_PORT=8091\nEXTRA_ARGS=\n"
-                .write(toFile: path, atomically: true, encoding: .utf8)
+        runCtl("ui", "start")
+        if settingsWindow == nil {
+            let cfg = WKWebViewConfiguration()
+            cfg.userContentController.add(self, name: "argus")
+            let web = WKWebView(frame: .zero, configuration: cfg)
+            let win = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered, defer: false)
+            win.title = "Argus Settings"
+            win.minSize = NSSize(width: 460, height: 420)
+            win.center()
+            win.contentView = web
+            win.isReleasedWhenClosed = false
+            settingsWindow = win
+            settingsWebView = web
         }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        p.arguments = ["-t", path]
-        try? p.run()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+            guard let self, let web = self.settingsWebView else { return }
+            // always reload so the form reflects the current config
+            web.load(URLRequest(url: URL(string: "http://127.0.0.1:\(self.uiPort)/settings")!))
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    func userContentController(_ controller: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              let action = body["action"] as? String else { return }
+        switch action {
+        case "getLogin":
+            let on = SMAppService.mainApp.status == .enabled
+            settingsWebView?.evaluateJavaScript("window.setLoginState(\(on))")
+        case "setLogin":
+            let want = body["value"] as? Bool ?? false
+            if want { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
+            updateLoginState()
+            let on = SMAppService.mainApp.status == .enabled
+            settingsWebView?.evaluateJavaScript("window.setLoginState(\(on))")
+        default:
+            break
+        }
     }
 
     @objc func switchModel(_ sender: NSMenuItem) {

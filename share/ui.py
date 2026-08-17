@@ -31,15 +31,55 @@ def is_downloaded(repo):
     return os.path.isdir(d)
 
 
-def current_model():
+DEFAULTS = {
+    "MODEL": VARIANTS[0]["id"],
+    "PORT": "8090",
+    "HOST": "127.0.0.1",
+    "UI_PORT": "8091",
+    "EXTRA_ARGS": "",
+}
+
+
+def read_config():
+    cfg = dict(DEFAULTS)
     try:
         with open(CONFIG) as f:
             for line in f:
-                if line.startswith("MODEL="):
-                    return line.split("=", 1)[1].strip()
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    if k.strip() in cfg:
+                        cfg[k.strip()] = v.strip()
     except OSError:
         pass
-    return VARIANTS[0]["id"]
+    return cfg
+
+
+def write_config(updates):
+    cfg = read_config()
+    for k, v in updates.items():
+        if k in cfg:
+            cfg[k] = str(v).strip()
+    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    with open(CONFIG, "w") as f:
+        for k in DEFAULTS:
+            f.write(f"{k}={cfg[k]}\n")
+    return cfg
+
+
+def cache_info():
+    path = os.path.expanduser("~/.cache/huggingface/hub")
+    try:
+        out = subprocess.run(["du", "-sk", path], capture_output=True, text=True, timeout=8).stdout
+        gb = int(out.split()[0]) / 1024 / 1024
+        size = f"{gb:.1f} GB"
+    except Exception:
+        size = "—"
+    return {"path": path, "size": size}
+
+
+def current_model():
+    return read_config()["MODEL"]
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -48,8 +88,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def _serve_html(self):
-        with open(os.path.join(HERE, "ui.html"), "rb") as f:
+    def _serve_html(self, name="ui.html"):
+        with open(os.path.join(HERE, name), "rb") as f:
             body = f.read()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -112,6 +152,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             self._serve_html()
+        elif self.path == "/settings":
+            self._serve_html("settings.html")
+        elif self.path == "/argus/config":
+            variants = [dict(v) for v in VARIANTS]
+            for v in variants:
+                v["downloaded"] = is_downloaded(v["id"])
+            self._send_json({"config": read_config(), "variants": variants, "cache": cache_info()})
         elif self.path == "/argus/models":
             cur = current_model()
             variants = [dict(v) for v in VARIANTS]
@@ -135,6 +182,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             subprocess.Popen([ARGUS, "use", model],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
+            self._send_json({"ok": True})
+        elif self.path == "/argus/config":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            restart = bool(body.pop("restart", False))
+            cfg = write_config(body)
+            if restart:
+                subprocess.Popen([ARGUS, "restart"], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+            self._send_json({"ok": True, "config": cfg})
+        elif self.path == "/argus/reveal":
+            subprocess.Popen(["open", cache_info()["path"]],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._send_json({"ok": True})
         elif self.path == "/argus/openlog":
             subprocess.Popen(["open", os.path.expanduser("~/Library/Logs/argus.log")],

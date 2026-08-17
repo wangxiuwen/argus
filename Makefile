@@ -16,7 +16,7 @@ install: build
 	codesign --force --sign - $(BUNDLE)
 	install -m 755 bin/argus $(BIN_DIR)/argus
 	mkdir -p $(HOME)/.local/share/argus
-	install -m 644 share/chat.py share/ui.py share/ui.html $(HOME)/.local/share/argus/
+	install -m 644 share/chat.py share/ui.py share/ui.html share/settings.html $(HOME)/.local/share/argus/
 	@echo "installed: $(BUNDLE) and $(BIN_DIR)/argus"
 	@echo "open the tray app with: open $(BUNDLE)"
 

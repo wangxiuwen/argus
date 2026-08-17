@@ -250,9 +250,14 @@ def stream_translate(upstream, model, out):
 
     index = -1
     open_kind = None          # "thinking" | "text" | "tool"
-    tool_slots = {}           # openai tool index -> our block index
+    # Anthropic content blocks cannot be interleaved: a block must stop before
+    # the next one starts.  OpenAI, however, can interleave argument fragments
+    # for several tool calls in the same chunks.  Buffer calls and emit each as
+    # one complete, sequential block after text/reasoning has finished.
+    tool_slots = {}           # openai tool index -> accumulated call
     finish = "stop"
     out_tokens = 0
+    reported_out_tokens = None
 
     def close_block():
         nonlocal open_kind
@@ -278,6 +283,18 @@ def stream_translate(upstream, model, out):
             chunk = json.loads(payload)
         except json.JSONDecodeError:
             continue
+        if chunk.get("error"):
+            close_block()
+            error = chunk["error"]
+            message = error.get("message", "upstream stream failed") \
+                if isinstance(error, dict) else str(error)
+            sse.event("error", {"type": "error", "error": {
+                "type": "api_error", "message": message,
+            }})
+            return
+        usage = chunk.get("usage") or {}
+        if usage.get("completion_tokens") is not None:
+            reported_out_tokens = usage["completion_tokens"]
         choice = (chunk.get("choices") or [{}])[0]
         delta = choice.get("delta") or {}
         if choice.get("finish_reason"):
@@ -290,6 +307,7 @@ def stream_translate(upstream, model, out):
             sse.event("content_block_delta", {
                 "type": "content_block_delta", "index": index,
                 "delta": {"type": "thinking_delta", "thinking": delta["reasoning_content"]}})
+            out_tokens += 1
 
         if delta.get("content"):
             if open_kind != "text":
@@ -303,22 +321,36 @@ def stream_translate(upstream, model, out):
         for call in delta.get("tool_calls") or []:
             slot = call.get("index", 0)
             fn = call.get("function") or {}
-            if slot not in tool_slots:
-                close_block()
-                open_block("tool", {"type": "tool_use",
-                                    "id": call.get("id") or f"toolu_{uuid.uuid4().hex[:16]}",
-                                    "name": fn.get("name") or "", "input": {}})
-                tool_slots[slot] = index
+            is_new = slot not in tool_slots
+            if is_new:
+                tool_slots[slot] = {
+                    "id": call.get("id") or f"toolu_{uuid.uuid4().hex[:16]}",
+                    "name": fn.get("name") or "",
+                    "arguments": [],
+                }
+            elif call.get("id"):
+                tool_slots[slot]["id"] = call["id"]
+            if fn.get("name") and not is_new:
+                tool_slots[slot]["name"] += fn["name"]
             if fn.get("arguments"):
-                sse.event("content_block_delta", {
-                    "type": "content_block_delta", "index": tool_slots[slot],
-                    "delta": {"type": "input_json_delta", "partial_json": fn["arguments"]}})
+                tool_slots[slot]["arguments"].append(fn["arguments"])
+                out_tokens += 1
 
     close_block()
+    for tool in tool_slots.values():
+        open_block("tool", {"type": "tool_use", "id": tool["id"],
+                            "name": tool["name"], "input": {}})
+        arguments = "".join(tool["arguments"])
+        if arguments:
+            sse.event("content_block_delta", {
+                "type": "content_block_delta", "index": index,
+                "delta": {"type": "input_json_delta", "partial_json": arguments}})
+        close_block()
     sse.event("message_delta", {
         "type": "message_delta",
         "delta": {"stop_reason": STOP_REASON.get(finish, "end_turn"), "stop_sequence": None},
-        "usage": {"output_tokens": out_tokens},
+        "usage": {"output_tokens": reported_out_tokens
+                  if reported_out_tokens is not None else out_tokens},
     })
     sse.event("message_stop", {"type": "message_stop"})
 

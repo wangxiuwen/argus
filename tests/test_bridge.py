@@ -94,5 +94,76 @@ class TranslationTests(unittest.TestCase):
         self.assertIsNone(translated["model"])
 
 
+class StreamingTranslationTests(unittest.TestCase):
+    @staticmethod
+    def translate(chunks):
+        upstream = io.BytesIO(b"".join(
+            b"data: " + json.dumps(chunk).encode() + b"\n\n"
+            for chunk in chunks
+        ) + b"data: [DONE]\n\n")
+        output = []
+        bridge.stream_translate(upstream, "local/model", output.append)
+        events = []
+        for packet in output:
+            lines = packet.decode().strip().splitlines()
+            events.append((lines[0].removeprefix("event: "),
+                           json.loads(lines[1].removeprefix("data: "))))
+        return events
+
+    def test_text_stream_has_a_complete_content_block(self):
+        events = self.translate([
+            {"choices": [{"delta": {"content": "hel"}, "finish_reason": None}]},
+            {"choices": [{"delta": {"content": "lo"}, "finish_reason": None}],
+             "usage": {"prompt_tokens": 7, "completion_tokens": 2}},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        ])
+        self.assertEqual([name for name, _ in events], [
+            "message_start", "ping", "content_block_start",
+            "content_block_delta", "content_block_delta", "content_block_stop",
+            "message_delta", "message_stop",
+        ])
+        self.assertEqual(events[-2][1]["usage"]["output_tokens"], 2)
+
+    def test_interleaved_tool_fragments_are_emitted_as_sequential_blocks(self):
+        events = self.translate([
+            {"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "id": "call_a", "function": {"name": "Read", "arguments": "{\"file_"}},
+                {"index": 1, "id": "call_b", "function": {"name": "Glob", "arguments": "{\"pat"}},
+            ]}, "finish_reason": None}]},
+            {"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "function": {"arguments": "path\":\"README.md\"}"}},
+                {"index": 1, "function": {"arguments": "tern\":\"*.py\"}"}},
+            ]}, "finish_reason": None}]},
+            {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+        ])
+
+        block_events = [(name, data) for name, data in events
+                        if name.startswith("content_block_")]
+        self.assertEqual([name for name, _ in block_events], [
+            "content_block_start", "content_block_delta", "content_block_stop",
+            "content_block_start", "content_block_delta", "content_block_stop",
+        ])
+        starts = [data["content_block"] for name, data in block_events
+                  if name == "content_block_start"]
+        deltas = [data["delta"]["partial_json"] for name, data in block_events
+                  if name == "content_block_delta"]
+        self.assertEqual([(b["id"], b["name"]) for b in starts],
+                         [("call_a", "Read"), ("call_b", "Glob")])
+        self.assertEqual(deltas, [
+            '{"file_path":"README.md"}', '{"pattern":"*.py"}',
+        ])
+        self.assertEqual(events[-2][1]["delta"]["stop_reason"], "tool_use")
+
+    def test_upstream_stream_error_becomes_an_anthropic_error_event(self):
+        events = self.translate([
+            {"error": {"message": "generation failed", "type": "server_error"}},
+        ])
+        self.assertEqual(events[-1], ("error", {
+            "type": "error",
+            "error": {"type": "api_error", "message": "generation failed"},
+        }))
+        self.assertNotIn("message_stop", [name for name, _ in events])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -115,6 +115,7 @@ is_ready() {
 
 cmd_start() {
   local pid
+  local -a download_env
   if pid="$(server_pid)"; then
     echo "$pid" > "$PIDFILE"
     echo "already running (pid $pid, http://$HOST:$PORT)"
@@ -132,9 +133,18 @@ cmd_start() {
   [[ -x "$SERVER" ]] || SERVER="$(command -v mlx_vlm.server)"
   echo "starting $MODEL on http://$HOST:$PORT"
   echo "(first run downloads the model from Hugging Face automatically)"
+  # huggingface_hub installs hf-xet by default.  Its chunk reconstruction path
+  # can die after many minutes on networks/proxies that work fine with regular
+  # HTTPS, leaving a large first download abandoned.  Prefer the resumable HTTP
+  # path for a desktop app; power users can explicitly opt back into Xet with
+  # HF_HUB_DISABLE_XET=0.
+  if (( ! ${+HF_HUB_DISABLE_XET} )); then
+    download_env=(env HF_HUB_DISABLE_XET=1)
+  fi
+  print -r -- "[argus] starting $MODEL" >> "$LOG"
   # Managed values come last so hand-edited EXTRA_ARGS cannot silently move
   # the server to another model/host/port or override the reply limit.
-  pid="$(spawn_detached "$SERVER" ${=EXTRA_ARGS} --model "$MODEL" --host "$HOST" \
+  pid="$(spawn_detached ${download_env[@]} "$SERVER" ${=EXTRA_ARGS} --model "$MODEL" --host "$HOST" \
     --port "$PORT" --max-tokens "$MAX_TOKENS")" || return 1
   echo "$pid" > "$PIDFILE"
   sleep 0.3
@@ -175,6 +185,9 @@ cmd_status() {
     echo "ready: http://$CONNECT_HOST:$PORT  model: $actual_model"
   elif is_running; then
     echo "busy or loading (pid $(server_pid)) — see: argus log"
+  elif [[ -f "$PIDFILE" ]]; then
+    echo "failed: server exited unexpectedly — see: argus log"
+    return 1
   else
     echo "not running"
   fi

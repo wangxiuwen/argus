@@ -23,6 +23,8 @@ PORT = int(os.environ.get("ARGUS_UI_PORT", "8091"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 ARGUS = os.path.expanduser("~/.local/bin/argus")
 CONFIG = os.path.expanduser("~/.config/argus/config")
+SERVER_PIDFILE = os.path.expanduser("~/.local/state/argus/server.pid")
+SERVER_LOG = os.path.expanduser("~/Library/Logs/argus.log")
 
 VARIANTS = [
     {"name": "Qwen3.8-27B bf16", "id": "mlx-community/Qwen3.8-27B-bf16", "gb": 54.7},
@@ -345,6 +347,36 @@ def server_process_alive(pidfile=None, expected_port=None):
         return False
 
 
+def server_startup_failure(pidfile=None, log_path=None):
+    """Describe an unexpected server exit without confusing it with Stop.
+
+    A deliberate `argus stop` removes the pidfile.  If the pidfile remains but
+    the process is gone, startup or model download crashed after the detached
+    launcher had already returned success.
+    """
+    pidfile = pidfile or SERVER_PIDFILE
+    log_path = log_path or SERVER_LOG
+    if not os.path.exists(pidfile):
+        return None
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 128_000))
+            tail = f.read().decode("utf-8", "replace")
+    except OSError:
+        tail = ""
+    # Do not attribute a previous run's error to the latest server process.
+    if "[argus] starting " in tail:
+        tail = tail.rsplit("[argus] starting ", 1)[-1]
+    if "CAS Client Error" in tail or "File reconstruction error" in tail:
+        error = "model download failed (Hugging Face Xet/CAS network error)"
+    elif "Application startup failed" in tail:
+        error = "model server failed during startup"
+    else:
+        error = "model server exited unexpectedly"
+    return {"stage": "failed", "error": error}
+
+
 def launch_argus_later(*args, delay=0.4):
     """Let the HTTP response flush before a command restarts this UI process."""
     def launch():
@@ -482,6 +514,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if alive and not ready:
                 out.update(startup_stage(current_model()))
                 out["target"] = current_model()
+            elif not alive:
+                failure = server_startup_failure()
+                if failure:
+                    out.update(failure)
+                    out["target"] = current_model()
             self._send_json(out)
         elif self.path == "/argus/models":
             self._send_json(model_catalog())

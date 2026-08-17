@@ -22,6 +22,7 @@ Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`
 - **Model switching** — pick bf16 / 8bit / 4bit from the tray submenu or the picker next to the message box; Argus rewrites the config, restarts the server, and downloads the weights if you don't have them yet. Already-downloaded variants are marked ✓.
 - **CLI** — `argus ask "what's this?" photo.png` for one-shot questions, `argus chat` for an interactive session (drop image paths straight into your message), `argus ui` for the chat page in a browser, plus `start|stop|restart|status|log|use|download|model|config`.
 - **Auto-download** — no model on disk? The first start pulls it from Hugging Face automatically (default: `mlx-community/Qwen3.8-27B-bf16`, ~54 GB bf16; pick a 4bit/8bit variant if you have less RAM).
+- **Resilient downloads** — Argus defaults to resumable HTTPS downloads instead of Xet/CAS chunk reconstruction, which is less reliable behind some mirrors and proxies. Set `HF_HUB_DISABLE_XET=0` when starting Argus to opt back into Xet.
 - **Configurable** — model, host, port, and extra `mlx_vlm.server` flags in one config file.
 
 ## Requirements

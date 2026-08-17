@@ -86,6 +86,31 @@ class BrowserOriginTests(unittest.TestCase):
 
 
 class ProcessTests(unittest.TestCase):
+    def test_failed_start_is_distinct_from_an_intentional_stop(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pidfile = Path(temp) / "server.pid"
+            log = Path(temp) / "argus.log"
+            pidfile.write_text("99999999")
+            log.write_text("RuntimeError: CAS Client Error\nApplication startup failed. Exiting.\n")
+            failure = ui.server_startup_failure(str(pidfile), str(log))
+        self.assertEqual(failure["stage"], "failed")
+        self.assertIn("download", failure["error"])
+
+    def test_intentional_stop_has_no_startup_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            failure = ui.server_startup_failure(
+                str(Path(temp) / "missing.pid"), str(Path(temp) / "missing.log"))
+        self.assertIsNone(failure)
+
+    def test_failure_ignores_errors_from_an_older_launch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pidfile = Path(temp) / "server.pid"
+            log = Path(temp) / "argus.log"
+            pidfile.write_text("99999999")
+            log.write_text("CAS Client Error\n[argus] starting org/new-model\nboom\n")
+            failure = ui.server_startup_failure(str(pidfile), str(log))
+        self.assertEqual(failure["error"], "model server exited unexpectedly")
+
     def test_stale_pid_reused_by_an_unrelated_process_is_not_alive(self):
         with tempfile.TemporaryDirectory() as temp:
             pidfile = Path(temp) / "server.pid"

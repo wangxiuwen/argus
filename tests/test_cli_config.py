@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -33,6 +34,42 @@ class CliConfigTests(unittest.TestCase):
             self.assertIn("MODEL=safe/model", result.stdout)
             self.assertIn("MAX_TOKENS=8192", result.stdout)
 
+    def test_start_uses_stable_http_downloads_by_default(self):
+        """Xet/CAS failures must not leave a first model download dead overnight."""
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            bin_dir = home / ".local" / "bin"
+            config_dir = home / ".config" / "argus"
+            bin_dir.mkdir(parents=True)
+            config_dir.mkdir(parents=True)
+            marker = home / "download-backend"
+            server = bin_dir / "mlx_vlm.server"
+            server.write_text(
+                "#!/bin/sh\n"
+                f"printf '%s' \"${{HF_HUB_DISABLE_XET-unset}}\" > {marker!s}\n"
+                "sleep 30\n")
+            server.chmod(0o755)
+            (config_dir / "config").write_text("PORT=65433\n")
+            env = dict(os.environ, HOME=str(home))
+            env.pop("HF_HUB_DISABLE_XET", None)
+            result = subprocess.run(
+                ["zsh", str(ROOT / "bin" / "argus"), "start"], env=env,
+                text=True, capture_output=True, check=False)
+            try:
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                for _ in range(100):
+                    if marker.exists():
+                        break
+                    time.sleep(0.05)
+                self.assertEqual(marker.read_text(), "1")
+            finally:
+                pidfile = home / ".local" / "state" / "argus" / "server.pid"
+                if pidfile.exists():
+                    try:
+                        os.kill(int(pidfile.read_text()), 15)
+                    except (ProcessLookupError, ValueError):
+                        pass
+
     def test_model_update_treats_metacharacters_as_text(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp)
@@ -59,6 +96,17 @@ class CliConfigTests(unittest.TestCase):
         finally:
             sleeper.terminate()
             sleeper.wait(timeout=5)
+
+    def test_status_reports_an_unexpected_server_exit_as_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            state_dir = home / ".local" / "state" / "argus"
+            state_dir.mkdir(parents=True)
+            (state_dir / "server.pid").write_text("99999999")
+            result = self.run_argus(home, "status")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("failed", result.stdout)
+            self.assertIn("argus log", result.stdout)
 
     def test_stale_pidfile_never_kills_another_mlx_server(self):
         other = subprocess.Popen([

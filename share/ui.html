@@ -600,6 +600,7 @@ async function pollReady() {
 }
 
 function startupText(h) {
+  if (h.stage === "failed") return h.error || "server failed — check argus log";
   if (!h.alive) return "server stopped";
   if (h.stage === "downloading") {
     const pct = h.percent != null ? ` ${h.percent}%` : "";

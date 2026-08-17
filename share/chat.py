@@ -11,6 +11,7 @@ import mimetypes
 import os
 import shlex
 import sys
+import time
 import urllib.request
 import urllib.error
 
@@ -39,14 +40,18 @@ def build_content(text, images):
     return [img_part(p) for p in images] + [{"type": "text", "text": text}]
 
 
-def stream_chat(messages, model):
-    payload = {"model": model, "messages": messages, "stream": True, "max_tokens": 4096}
+def stream_chat(messages, model, thinking=False):
+    payload = {"model": model, "messages": messages, "stream": True, "max_tokens": 4096,
+               "enable_thinking": thinking}
     req = urllib.request.Request(
         API + "/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
     )
     out = []
+    tps = 0.0
+    t0 = time.monotonic()
+    ttft = 0.0
     # let the user know we are waiting rather than wedged; cleared on the first token
     print("\033[2m…\033[0m", end="", flush=True)
     try:
@@ -58,11 +63,16 @@ def stream_chat(messages, model):
                 data = line[5:].strip()
                 if data == "[DONE]":
                     break
-                delta = json.loads(data)["choices"][0].get("delta") or {}
+                chunk = json.loads(data)
+                speed = (chunk.get("timings") or {}).get("predicted_per_second")
+                if speed:
+                    tps = speed
+                delta = chunk["choices"][0].get("delta") or {}
                 piece = delta.get("content")
                 if piece:
                     if not out:
                         print("\r\033[K", end="", flush=True)
+                        ttft = time.monotonic() - t0
                     out.append(piece)
                     print(piece, end="", flush=True)
     except urllib.error.HTTPError as e:
@@ -74,6 +84,14 @@ def stream_chat(messages, model):
     if not out:
         print("\r\033[K", end="")
     print()
+    if out:
+        bits = []
+        if tps:
+            bits.append(f"{tps:.1f} tok/s")
+        if ttft:
+            bits.append(f"first token {ttft:.1f}s")
+        bits.append(f"{time.monotonic() - t0:.1f}s total")
+        print(f"\033[2m{'  ·  '.join(bits)}\033[0m", file=sys.stderr)
     return "".join(out)
 
 
@@ -90,20 +108,28 @@ def split_images(words):
 
 
 def cmd_ask(argv):
+    thinking = False
+    argv = list(argv)
+    for flag in ("--think", "--thinking"):
+        if flag in argv:
+            argv.remove(flag)
+            thinking = True
     if not argv:
-        sys.exit('usage: argus ask "prompt" [image.png ...]')
+        sys.exit('usage: argus ask [--think] "prompt" [image.png ...]')
     text, images = split_images(argv)
     model = get_model()
     for p in images:
         print(f"[image] {p}", file=sys.stderr)
-    stream_chat([{"role": "user", "content": build_content(text or "Describe this image.", images)}], model)
+    stream_chat([{"role": "user", "content": build_content(text or "Describe this image.", images)}],
+                model, thinking)
 
 
 def cmd_chat():
     model = get_model()
+    thinking = False
     print(f"Argus chat — model: {model}")
     print("Drop or type image paths inside your message to attach them.")
-    print("Commands: /new (reset context)  /quit\n")
+    print("Commands: /new (reset context)  /think (toggle thinking)  /quit\n")
     messages = []
     while True:
         try:
@@ -119,6 +145,10 @@ def cmd_chat():
             messages = []
             print("(context cleared)")
             continue
+        if line == "/think":
+            thinking = not thinking
+            print(f"(thinking {'on' if thinking else 'off'})")
+            continue
         try:
             words = shlex.split(line)
         except ValueError:
@@ -127,7 +157,7 @@ def cmd_chat():
         for p in images:
             print(f"[image] {p}")
         messages.append({"role": "user", "content": build_content(text or "Describe this image.", images)})
-        reply = stream_chat(messages, model)
+        reply = stream_chat(messages, model, thinking)
         messages.append({"role": "assistant", "content": reply})
 
 

@@ -71,6 +71,35 @@
   #dot { width: 7px; height: 7px; border-radius: 50%; background: #c9c9cf; }
   #dot.ok { background: #22c55e; }
   #log { flex: 1; overflow-y: auto; padding: 4px 20px 10px; }
+  /* Launch view: point other tools at the local API */
+  #launch { flex: 1; overflow-y: auto; padding: 4px 20px 24px; display: none; }
+  #launch .wrap { max-width: 700px; margin: 0 auto; }
+  #launch h2 { font-size: 21px; margin: 8px 0 4px; }
+  #launch .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .card:last-child { border-bottom: none; }
+  .card .logo {
+    width: 38px; height: 38px; border-radius: 10px; background: var(--field); flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .card .info { flex: 1; min-width: 0; }
+  .card .name { font-weight: 600; }
+  .card .desc { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; }
+  .cmd {
+    display: flex; align-items: center; gap: 8px; background: var(--field);
+    border-radius: 9px; padding: 8px 10px;
+  }
+  .cmd code {
+    flex: 1; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-x: auto; white-space: pre; color: var(--text);
+  }
+  .copy {
+    border: none; background: none; color: var(--muted); cursor: pointer; flex: none;
+    padding: 3px 5px; border-radius: 6px; font-size: 12px;
+  }
+  .copy:hover { background: var(--hover); color: var(--text); }
+  body.launching #log, body.launching #composer { display: none; }
+  body.launching #launch { display: block; }
   #log.empty { display: flex; align-items: center; justify-content: center; }
   #hero { text-align: center; color: var(--muted); }
   #hero .eye { font-size: 44px; display: block; margin-bottom: 6px; }
@@ -83,6 +112,7 @@
   .bubble img { max-width: 240px; max-height: 240px; border-radius: 10px; display: block; margin-bottom: 6px; }
   .bubble details { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
   .bubble details pre { white-space: pre-wrap; margin: 4px 0 0; font: inherit; }
+  .meta { display: block; color: var(--muted); font-size: 11.5px; margin-top: 7px; }
   /* composer card */
   #composer { padding: 0 20px 22px; }
   #card {
@@ -108,6 +138,13 @@
     color: var(--text); font-size: 15px; cursor: pointer; flex: none;
     display: flex; align-items: center; justify-content: center;
   }
+  #think {
+    display: flex; align-items: center; gap: 5px; border: none; border-radius: 15px;
+    background: var(--hover); color: var(--muted); font: inherit; font-size: 13px;
+    padding: 6px 11px; cursor: pointer; flex: none;
+  }
+  #think.on { background: var(--send); color: var(--send-text); }
+  #think svg { width: 14px; height: 14px; }
   #picker { position: relative; margin-left: auto; }
   #pickerBtn {
     display: flex; align-items: center; gap: 6px; border: none; border-radius: 15px;
@@ -171,6 +208,10 @@
     <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
       stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16h9A1.5 1.5 0 0 0 16 14.5V10"/><path d="M13.4 3.6a1.4 1.4 0 0 1 2 2L10.6 10.4l-2.6.6.6-2.6z"/></svg></span>New Chat
   </button>
+  <button class="side-btn" id="launchBtn">
+    <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
+      stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 12.5 4 11l2.2-2.6 3.1.4"/><path d="M7.5 11.6c1.6-4 4.6-7 8.9-8.1.4 4.4-2.1 7.9-5.3 10.2z"/><path d="M7.5 15.6 4.4 16l.4-3.1"/></svg></span>Launch
+  </button>
   <div class="label">Chats</div>
   <div id="chats"></div>
   <button class="side-btn" id="openLog">
@@ -192,6 +233,13 @@
   <div id="log" class="empty">
     <div id="hero"><span class="eye">👁️</span><span class="t">Ask anything — drop or paste an image</span></div>
   </div>
+  <div id="launch">
+    <div class="wrap">
+      <h2>Launch</h2>
+      <div class="sub">Copy a command and run it in your terminal — these point the tool at Argus instead of a cloud API.</div>
+      <div id="cards"></div>
+    </div>
+  </div>
   <div id="composer">
     <div id="card">
       <div id="thumbs"></div>
@@ -199,6 +247,11 @@
       <div id="tools">
         <button class="round" id="attach" title="Attach image">＋</button>
         <input type="file" id="file" accept="image/*" multiple hidden>
+        <button id="think" title="Let the model think before answering">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2a4.3 4.3 0 0 0-4.3 4.3c0 1.2.5 2.2 1.3 3 .5.5.8 1.1.8 1.8v.7h4.4v-.7c0-.7.3-1.3.8-1.8a4.2 4.2 0 0 0 1.3-3A4.3 4.3 0 0 0 10 3.2z"/><line x1="8.2" y1="16.4" x2="11.8" y2="16.4"/></svg>
+          Think
+        </button>
         <div id="picker">
           <button id="pickerBtn"><span class="name">Select a model</span><span class="caret">▾</span></button>
           <div id="menu">
@@ -214,6 +267,7 @@
 <script>
 const $ = id => document.getElementById(id);
 let model = null, images = [], messages = [], busy = false, switching = false, variants = [];
+let lastTps = 0;  // tokens/s reported by the server for the request in flight
 
 /* ---------- sidebar + chat history ---------- */
 const HERO = '<div id="hero"><span class="eye">👁️</span><span class="t">Ask anything — drop or paste an image</span></div>';
@@ -228,6 +282,16 @@ setSidebar(localStorage.getItem("argus.side") === "hidden");
 $("toggleIn").onclick = () => setSidebar(true);
 $("toggleOut").onclick = () => setSidebar(false);
 $("openLog").onclick = () => fetch("/argus/openlog", {method: "POST"});
+
+/* thinking toggle — sent per request, no server restart needed */
+let thinking = localStorage.getItem("argus.thinking") === "on";
+function paintThink() { $("think").classList.toggle("on", thinking); }
+$("think").onclick = () => {
+  thinking = !thinking;
+  localStorage.setItem("argus.thinking", thinking ? "on" : "off");
+  paintThink();
+};
+paintThink();
 
 function loadChats() {
   try { chats = JSON.parse(localStorage.getItem("argus.chats") || "[]"); } catch { chats = []; }
@@ -293,6 +357,7 @@ function newChat() {
 function openChat(id) {
   const c = chats.find(x => x.id === id);
   if (!c) return;
+  document.body.classList.remove("launching");
   curId = id;
   messages = c.messages;
   $("log").innerHTML = "";
@@ -306,9 +371,69 @@ function openChat(id) {
   }
   renderChats();
 }
-$("newChat").onclick = newChat;
+$("newChat").onclick = () => { document.body.classList.remove("launching"); newChat(); };
 loadChats();
 renderChats();
+
+/* ---------- Launch view ---------- */
+const LAUNCH = api => [
+  {icon: "⌨︎", name: "curl", desc: "Check the endpoint from a shell",
+   cmd: `curl ${api}/chat/completions -H 'Content-Type: application/json' \\\n  -d '{"model":"MODEL","messages":[{"role":"user","content":"hello"}]}'`},
+  {icon: "🐍", name: "OpenAI Python SDK", desc: "Any script written against the OpenAI client",
+   cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=argus python your_script.py`},
+  {icon: "⬢", name: "OpenAI Node SDK", desc: "Same for JavaScript and TypeScript",
+   cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=argus node your_script.mjs`},
+  {icon: "⌘", name: "Codex CLI", desc: "OpenAI's coding agent against your local model",
+   cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=argus codex`},
+  {icon: "✎", name: "aider", desc: "Pair programming in your terminal",
+   cmd: `aider --openai-api-base ${api} --openai-api-key argus --model openai/MODEL`},
+  {icon: "⚙", name: "Any OpenAI-compatible app", desc: "Open WebUI, Continue, Zed, Raycast — paste these two values",
+   cmd: `Base URL: ${api}\nAPI key:  argus   (any non-empty string works)`},
+];
+
+async function renderLaunch() {
+  const {config} = await fetch("/argus/config").then(r => r.json());
+  const host = config.HOST === "0.0.0.0" ? location.hostname : config.HOST;
+  const api = `http://${host}:${config.PORT}/v1`;
+  const box = $("cards");
+  box.innerHTML = "";
+  for (const item of LAUNCH(api)) {
+    const cmd = item.cmd.replaceAll("MODEL", model || "MODEL");
+    const card = document.createElement("div");
+    card.className = "card";
+    const logo = document.createElement("div");
+    logo.className = "logo";
+    logo.textContent = item.icon;
+    const info = document.createElement("div");
+    info.className = "info";
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = item.name;
+    const desc = document.createElement("div");
+    desc.className = "desc";
+    desc.textContent = item.desc;
+    const row = document.createElement("div");
+    row.className = "cmd";
+    const code = document.createElement("code");
+    code.textContent = cmd;
+    const copy = document.createElement("button");
+    copy.className = "copy";
+    copy.textContent = "Copy";
+    copy.onclick = async () => {
+      await navigator.clipboard.writeText(cmd);
+      copy.textContent = "Copied";
+      setTimeout(() => copy.textContent = "Copy", 1500);
+    };
+    row.append(code, copy);
+    info.append(name, desc, row);
+    card.append(logo, info);
+    box.append(card);
+  }
+}
+$("launchBtn").onclick = () => {
+  renderLaunch();
+  document.body.classList.add("launching");
+};
 
 /* ---------- model picker ---------- */
 function shortName(id) { return id.split("/").pop(); }
@@ -378,7 +503,9 @@ async function pollReady() {
     if (!switching) model = h.model;
     else if (h.model === model) switching = false;
     $("dot").classList.add("ok");
-    $("statusText").textContent = busy ? "generating…" : "ready";
+    $("statusText").textContent = busy
+      ? (lastTps ? `generating… ${lastTps.toFixed(1)} tok/s` : "generating…")
+      : "ready";
     setPickerLabel();
   } else {
     // process alive but not answering = loading weights, or busy generating for us
@@ -466,6 +593,8 @@ async function send() {
   }, 250);
   const stopWaiting = () => { clearInterval(tick); wait.remove(); };
 
+  lastTps = 0;
+  let ttft = 0;
   const ctl = new AbortController();
   $("send").textContent = "■";
   $("send").title = "Stop";
@@ -476,7 +605,8 @@ async function send() {
   try {
     const resp = await fetch("/v1/chat/completions", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({model, messages, stream: true, max_tokens: 4096}),
+      body: JSON.stringify({model, messages, stream: true, max_tokens: 4096,
+        enable_thinking: thinking}),
       signal: ctl.signal,
     });
     if (!resp.ok) throw new Error((await resp.json()).error || resp.status);
@@ -493,8 +623,13 @@ async function send() {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
         if (data === "[DONE]") continue;
-        const delta = JSON.parse(data).choices[0].delta || {};
-        if (delta.reasoning_content || delta.content) stopWaiting();
+        const chunk = JSON.parse(data);
+        if (chunk.timings?.predicted_per_second) lastTps = chunk.timings.predicted_per_second;
+        const delta = chunk.choices[0].delta || {};
+        if (delta.reasoning_content || delta.content) {
+          if (!ttft) ttft = (Date.now() - t0) / 1000;
+          stopWaiting();
+        }
         if (delta.reasoning_content) {
           reasoning += delta.reasoning_content;
           if (!reasonPre) {
@@ -512,6 +647,14 @@ async function send() {
     }
     messages.push({role: "assistant", content: answer});
     persistCurrent();
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = [
+      lastTps ? `${lastTps.toFixed(1)} tok/s` : null,
+      ttft ? `first token ${ttft.toFixed(1)}s` : null,
+      `${((Date.now() - t0) / 1000).toFixed(1)}s total`,
+    ].filter(Boolean).join("  ·  ");
+    b.append(meta);
   } catch (err) {
     if (err.name === "AbortError") {
       if (answer) {

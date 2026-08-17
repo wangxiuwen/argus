@@ -7,6 +7,7 @@ mlx-vlm server. SSE streaming responses are forwarded line by line.
 import http.server
 import json
 import os
+import re
 import socketserver
 import subprocess
 import sys
@@ -82,6 +83,42 @@ def current_model():
     return read_config()["MODEL"]
 
 
+def model_dir_size(repo):
+    d = os.path.expanduser("~/.cache/huggingface/hub/models--" + repo.replace("/", "--"))
+    try:
+        out = subprocess.run(["du", "-sk", d], capture_output=True, text=True, timeout=5).stdout
+        return int(out.split()[0]) / 1024 / 1024
+    except Exception:
+        return 0.0
+
+
+def startup_stage(model):
+    """What the server is doing while it is not answering yet: downloading or loading.
+
+    Progress comes from the huggingface tqdm bars in the log, which use \\r inside
+    one physical line, so split on both separators and scan from the end.
+    """
+    log = os.path.expanduser("~/Library/Logs/argus.log")
+    stage, percent = "starting", None
+    try:
+        with open(log, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 65536))
+            chunks = f.read().decode("utf-8", "replace").replace("\r", "\n").split("\n")
+    except OSError:
+        chunks = []
+    for line in reversed(chunks):
+        m = re.search(r"Fetching \d+ files:\s+(\d+)%", line)
+        if m:
+            stage, percent = "downloading", int(m.group(1))
+            break
+        if "Model and processor loaded successfully" in line or "Loading model:" in line:
+            stage = "loading"
+            break
+    gb = model_dir_size(model)
+    return {"stage": stage, "percent": percent, "downloaded_gb": round(gb, 1)}
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -112,7 +149,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         except OSError:
-            body = json.dumps({"error": f"server not reachable at {API} — run: argus start"}).encode()
+            body = json.dumps({"error": "the model server is not answering yet — "
+                                        "wait for the status dot to turn green, or run: argus start"}).encode()
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -177,7 +215,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     ready = True
             except OSError:
                 pass
-            self._send_json({"alive": alive, "ready": ready, "model": model})
+            out = {"alive": alive, "ready": ready, "model": model}
+            if alive and not ready:
+                out.update(startup_stage(current_model()))
+                out["target"] = current_model()
+            self._send_json(out)
         elif self.path == "/argus/models":
             cur = current_model()
             variants = [dict(v) for v in VARIANTS]

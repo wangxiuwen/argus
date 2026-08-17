@@ -13,8 +13,9 @@ Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`
 
 ## Features
 
-- **Desktop chat app** — **Open Argus** in the menu bar opens a native window (AppKit + WebKit) with a sidebar of past chats, drag & drop / ⌘V image attachments, streaming replies and collapsible thinking. No Electron: the whole app is one Swift file.
-- **Menu bar control** — start / stop / restart the server, live status icon, switch model, copy API URL, open log, launch at login, settings.
+- **Desktop chat app** — **Open Argus** in the menu bar opens a native window (AppKit + WebKit) with a sidebar of past chats, images by ＋ / drag & drop / ⌘V, streaming replies and collapsible thinking. While the model works you get pulsing dots and an elapsed-seconds counter, and the send button turns into Stop. No Electron: the whole app is one Swift file.
+- **Settings window** — model, launch at login, expose-to-network, ports, reply length limit, model location with size, and extra server flags; Save or Save & Restart.
+- **Menu bar control** — start / stop / restart the server, live status icon, switch model, copy API URL, open log.
 - **Model switching** — pick bf16 / 8bit / 4bit from the tray submenu or the picker next to the message box; Argus rewrites the config, restarts the server, and downloads the weights if you don't have them yet. Already-downloaded variants are marked ✓.
 - **CLI** — `argus ask "what's this?" photo.png` for one-shot questions, `argus chat` for an interactive session (drop image paths straight into your message), `argus ui` for the chat page in a browser, plus `start|stop|restart|status|log|use|download|model|config`.
 - **Auto-download** — no model on disk? The first start pulls it from Hugging Face automatically (default: `mlx-community/Qwen3.8-27B-bf16`, ~54 GB bf16; pick a 4bit/8bit variant if you have less RAM).

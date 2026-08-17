@@ -1,5 +1,5 @@
 APP     = Argus
-VERSION = 0.1.1
+VERSION = 0.1.2
 OUT     = .build/$(APP)
 BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin

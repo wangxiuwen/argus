@@ -51,6 +51,20 @@ class ConfigTests(unittest.TestCase):
             ui.write_config({"UI_PORT": "8090"})
 
 
+class BrowserOriginTests(unittest.TestCase):
+    def test_cli_and_same_origin_browser_requests_are_allowed(self):
+        self.assertTrue(ui.trusted_browser_origin(None, 8091))
+        self.assertTrue(ui.trusted_browser_origin("http://127.0.0.1:8091", 8091))
+        self.assertTrue(ui.trusted_browser_origin("http://localhost:8091", 8091))
+
+    def test_cross_site_and_lookalike_origins_are_rejected(self):
+        self.assertFalse(ui.trusted_browser_origin("https://evil.example", 8091))
+        self.assertFalse(ui.trusted_browser_origin("http://127.0.0.1.evil.example:8091", 8091))
+        self.assertFalse(ui.trusted_browser_origin("http://127.0.0.1:9999", 8091))
+        self.assertFalse(ui.trusted_browser_origin("null", 8091))
+        self.assertFalse(ui.trusted_browser_origin(None, 8091, "cross-site"))
+
+
 class ProcessTests(unittest.TestCase):
     def test_stale_pid_reused_by_an_unrelated_process_is_not_alive(self):
         with tempfile.TemporaryDirectory() as temp:

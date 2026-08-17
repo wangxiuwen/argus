@@ -51,6 +51,17 @@ class LoadedModelTests(unittest.TestCase):
             self.assertIsNone(bridge.loaded_model())
 
 
+class BrowserOriginTests(unittest.TestCase):
+    def test_non_browser_clients_and_same_origin_requests_are_allowed(self):
+        self.assertTrue(bridge.trusted_browser_origin(None, 8092))
+        self.assertTrue(bridge.trusted_browser_origin("http://127.0.0.1:8092", 8092))
+
+    def test_cross_site_requests_are_rejected(self):
+        self.assertFalse(bridge.trusted_browser_origin("https://evil.example", 8092))
+        self.assertFalse(bridge.trusted_browser_origin("http://localhost:8091", 8092))
+        self.assertFalse(bridge.trusted_browser_origin(None, 8092, "cross-site"))
+
+
 class TranslationTests(unittest.TestCase):
     def test_system_messages_are_merged_at_the_front(self):
         request = {

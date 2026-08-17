@@ -165,6 +165,26 @@ DEFAULTS = {
 PORT_KEYS = ("PORT", "UI_PORT", "BRIDGE_PORT")
 
 
+def trusted_browser_origin(origin, port, fetch_site=None):
+    """Allow local UI mutations and non-browser clients, reject CSRF/rebinding.
+
+    CLI clients do not send Origin or Sec-Fetch-Site.  Browsers do, so a page
+    on the public web must not be able to switch models, rewrite config, or
+    invoke local desktop actions through Argus's loopback HTTP server.
+    """
+    if fetch_site == "cross-site":
+        return False
+    if not origin:
+        return True
+    try:
+        parsed = urllib.parse.urlsplit(origin)
+        return (parsed.scheme == "http"
+                and parsed.hostname in ("127.0.0.1", "localhost", "::1")
+                and parsed.port == int(port))
+    except (TypeError, ValueError):
+        return False
+
+
 def clean_config_value(key, value):
     if not isinstance(value, (str, int)):
         raise ValueError(f"{key} must be text or a number")
@@ -451,6 +471,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
+        if not trusted_browser_origin(self.headers.get("Origin"), PORT,
+                                      self.headers.get("Sec-Fetch-Site")):
+            self._send_json({"error": "cross-site requests are not allowed"}, 403)
+            return
         if self.path == "/argus/use":
             try:
                 body = self._read_json()

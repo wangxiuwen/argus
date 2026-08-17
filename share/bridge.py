@@ -18,6 +18,7 @@ import socketserver
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -35,6 +36,21 @@ DEBUG = os.environ.get("ARGUS_BRIDGE_DEBUG") == "1"
 # server, causing mlx-vlm to swap back to the old weights.
 MODEL_CACHE_SECONDS = 0.5
 _loaded = {"id": None, "at": 0.0}
+
+
+def trusted_browser_origin(origin, port, fetch_site=None):
+    """Block web pages from spending local inference resources via CSRF."""
+    if fetch_site == "cross-site":
+        return False
+    if not origin:
+        return True
+    try:
+        parsed = urllib.parse.urlsplit(origin)
+        return (parsed.scheme == "http"
+                and parsed.hostname in ("127.0.0.1", "localhost", "::1")
+                and parsed.port == int(port))
+    except (TypeError, ValueError):
+        return False
 
 
 def debug(*parts):
@@ -438,6 +454,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data)
 
     def do_POST(self):
+        if not trusted_browser_origin(self.headers.get("Origin"), PORT,
+                                      self.headers.get("Sec-Fetch-Site")):
+            return self._error("cross-site requests are not allowed", 403,
+                               "permission_error")
         try:
             length = int(self.headers.get("Content-Length", 0))
         except ValueError:

@@ -52,6 +52,14 @@ class HtmlTests(unittest.TestCase):
         self.assertEqual(control["min"], "128")
         self.assertEqual(control["max"], "131072")
 
+    def test_iteration_controls_do_not_depend_on_unhandled_webkit_dialogs(self):
+        page = (ROOT / "share" / "ui.html").read_text()
+        self.assertIn('id="iterationBtn"', page)
+        self.assertIn("再次点击确认", page)
+        self.assertIn("feedback-input", page)
+        self.assertNotIn("prompt(", page)
+        self.assertNotIn("confirm(", page)
+
 
 if __name__ == "__main__":
     unittest.main()

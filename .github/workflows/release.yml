@@ -41,7 +41,8 @@ jobs:
                       ./bin/argus ./share/chat.py ./share/ui.py ./share/ui.html \
                       ./share/settings.html ./share/bridge.py ./share/launch.py \
                       ./share/prune.py ./share/video.py ./share/music.py \
-                      ./share/image.py ./share/jobs.py ./install.sh ./README.md ./LICENSE; do
+                      ./share/image.py ./share/jobs.py ./share/iteration.py \
+                      ./install.sh ./README.md ./LICENSE; do
             grep -qx "$want" files.txt || { echo "missing $want"; exit 1; }
           done
           VERSION="${RELEASE_TAG#v}"

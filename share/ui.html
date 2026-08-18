@@ -106,6 +106,20 @@
   .copy:hover { background: var(--hover); color: var(--text); }
   body.launching #log, body.launching #composer { display: none; }
   body.launching #launch { display: block; }
+  #iterations { flex: 1; overflow-y: auto; padding: 18px 24px 28px; display: none; }
+  body.iterating #log, body.iterating #composer, body.iterating #launch { display: none; }
+  body.iterating #iterations { display: block; }
+  .iteration-wrap { max-width: 760px; margin: 0 auto; }
+  .iteration-wrap h2 { margin: 0 0 4px; }
+  .iteration-sub { color: var(--muted); margin-bottom: 18px; }
+  .iteration-section { border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin: 12px 0; }
+  .iteration-section h3 { margin: 0 0 9px; font-size: 15px; }
+  .iteration-form { display: flex; gap: 8px; }
+  .iteration-form input { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; background: var(--field); color: var(--text); font: inherit; }
+  .candidate-row { padding: 9px 0; border-top: 1px solid var(--border); }
+  .candidate-row:first-child { border-top: 0; }
+  .candidate-meta { color: var(--muted); font-size: 12px; }
+  .feedback-input { min-width: 180px; flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; background: var(--field); color: var(--text); font: inherit; }
   .shortcut { color: var(--muted); font-size: 11px; white-space: nowrap; }
   #log.empty { display: flex; align-items: center; justify-content: center; }
   #hero { width: min(560px,100%); text-align: center; color: var(--muted); padding-bottom: 90px; }
@@ -267,6 +281,9 @@
     <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
       stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 12.5 4 11l2.2-2.6 3.1.4"/><path d="M7.5 11.6c1.6-4 4.6-7 8.9-8.1.4 4.4-2.1 7.9-5.3 10.2z"/><path d="M7.5 15.6 4.4 16l.4-3.1"/></svg></span>连接工具
   </button>
+  <button class="side-btn" id="iterationBtn">
+    <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15.8 7.2A6 6 0 0 0 5 5.1L3.5 7"/><path d="M3.5 3.8V7H7"/><path d="M4.2 12.8A6 6 0 0 0 15 14.9l1.5-1.9"/><path d="M16.5 16.2V13H13"/></svg></span>迭代中心
+  </button>
   <div class="label">对话记录</div>
   <div id="chats"></div>
   <button class="side-btn" id="openLog">
@@ -296,6 +313,11 @@
       <div id="cards"></div>
     </div>
   </div>
+  <div id="iterations"><div class="iteration-wrap">
+    <h2>迭代中心</h2>
+    <div class="iteration-sub">创作质检与记忆自动运行；源码 Candidate 和 LoRA Training Run 必须在这里批准。</div>
+    <div id="iterationContent">正在读取…</div>
+  </div></div>
   <div id="composer">
     <div id="card">
       <div id="thumbs"></div>
@@ -471,13 +493,13 @@ function newChat() {
   $("input").focus();
 }
 function showChat() {
-  document.body.classList.remove("launching");
+  document.body.classList.remove("launching", "iterating");
   $("moduleTitle").textContent = "本地助手";
 }
 function openChat(id) {
   const c = chats.find(x => x.id === id);
   if (!c) return;
-  document.body.classList.remove("launching");
+  document.body.classList.remove("launching", "iterating");
   $("moduleTitle").textContent = "本地助手";
   curId = id;
   messages = c.messages;
@@ -566,9 +588,52 @@ async function renderLaunch() {
 }
 $("launchBtn").onclick = () => {
   renderLaunch();
+  document.body.classList.remove("iterating");
   document.body.classList.add("launching");
   $("moduleTitle").textContent = "连接工具";
 };
+
+function candidateLabel(candidate) {
+  const kind = candidate.kind === "code" ? "源码" : "模型适配";
+  const states={queued:"排队中",preparing:"准备中",running:"运行中",ready:"待批准",insufficient_data:"数据不足",complete:"已完成",failed:"失败",applied:"已应用"};
+  return `${kind}候选 · ${states[candidate.status] || candidate.status}`;
+}
+async function candidateApproval(id, action) {
+  await mediaJson(`/mira/candidates/${id}/${action}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({confirmed:true}),
+  });
+  renderIterations();
+}
+async function renderIterations() {
+  document.body.classList.remove("launching");
+  document.body.classList.add("iterating");
+  $("moduleTitle").textContent = "迭代中心";
+  const box=$("iterationContent"); box.textContent="正在读取…";
+  try {
+    const data=await mediaJson("/mira/iterations"); box.innerHTML="";
+    const memory=document.createElement("section"); memory.className="iteration-section";
+    memory.innerHTML=`<h3>长期记忆 · ${data.preferences.length} 条</h3>`;
+    const prefs=document.createElement("div"); prefs.className="candidate-meta";
+    prefs.textContent=data.preferences.map(p=>`${p.name}：${p.value}`).join("\n") || "还没有明确偏好；可在产物下方点“记住并改进”。";
+    memory.append(prefs); box.append(memory);
+    const quality=document.createElement("section"); quality.className="iteration-section";
+    quality.innerHTML=`<h3>反馈数据</h3><div class="candidate-meta">${data.feedback.total || 0} 条反馈 · ${data.feedback.learnable || 0} 条可训练 · 平均 ${data.feedback.average ?? "—"}/5</div>`;
+    box.append(quality);
+    const code=document.createElement("section"); code.className="iteration-section";
+    code.innerHTML='<h3>源码自我迭代</h3><div class="iteration-form"><input id="codeGoal" placeholder="希望 Mira 自己改进什么？"><button class="media-download" id="makeCode">生成隔离 Candidate</button></div>';
+    box.append(code);
+    $("makeCode").onclick=async()=>{const goal=$("codeGoal").value.trim();if(!goal)return;await mediaJson("/mira/candidates/code",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal})});renderIterations();};
+    const train=document.createElement("section"); train.className="iteration-section";
+    train.innerHTML='<h3>模型权重迭代</h3><div class="iteration-form"><button class="media-download" id="makeLora">从明确好评准备 LoRA Candidate</button></div><div class="candidate-meta">至少需要 20 条评分 4–5 且允许学习的样本。</div>';
+    box.append(train);
+    $("makeLora").onclick=async()=>{await mediaJson("/mira/candidates/lora",{method:"POST",headers:{"Content-Type":"application/json"},body:'{"iters":100}'});renderIterations();};
+    const list=document.createElement("section"); list.className="iteration-section"; list.innerHTML="<h3>迭代候选</h3>";
+    for(const c of data.candidates){const row=document.createElement("div");row.className="candidate-row";row.append(document.createTextNode(candidateLabel(c)));const meta=document.createElement("div");meta.className="candidate-meta";meta.textContent=c.summary || c.goal || c.error || "";row.append(meta);let action=null,label="";if(c.kind==="code"&&c.status==="ready"){action="apply";label="批准应用到源码副本";}if(c.kind==="lora"&&c.status==="ready"){action="start";label="批准开始训练";}if(action){const b=document.createElement("button");b.className="media-download";b.textContent=label;b.onclick=()=>{if(b.dataset.armed!=="true"){b.dataset.armed="true";b.textContent="再次点击确认（不会覆盖当前 Mira）";return;}b.disabled=true;b.textContent="正在执行…";candidateApproval(c.id,action).catch(e=>{b.disabled=false;b.textContent=`失败：${e.message}`;});};row.append(b);}list.append(row);}box.append(list);
+  } catch(e) { box.textContent=`迭代状态读取失败：${e.message}`; }
+}
+$("iterationBtn").onclick=renderIterations;
+if (location.hash === "#iterations") renderIterations();
 
 async function mediaJson(url, options) {
   const r = await fetch(url, options);
@@ -656,7 +721,9 @@ function resumeMedia(record, card) {
 function renderMedia(container, record) {
   container.innerHTML = "";
   const title = document.createElement("div"); title.className="media-title";
-  title.textContent = ({image:"生成的图片",music:"生成的音乐",video:"生成的视频"})[record.kind] + (record.elapsed ? ` · ${record.elapsed} 秒` : "");
+  title.textContent = ({image:"生成的图片",music:"生成的音乐",video:"生成的视频"})[record.kind]
+    + (record.elapsed ? ` · ${record.elapsed} 秒` : "")
+    + (record.qualityScore != null ? ` · 质量 ${record.qualityScore}/10` : "");
   container.append(title);
   if (record.kind === "image") { const el=document.createElement("img"); el.className="generated-image"; el.src=record.url; container.append(el); }
   if (record.kind === "music") { const el=document.createElement("audio"); el.controls=true; el.preload="metadata"; el.src=record.url; container.append(el); }
@@ -671,7 +738,25 @@ function renderMedia(container, record) {
       download.textContent="已保存并在 Finder 中显示"; download.title=result.path;
     } catch(e) { download.disabled=false; download.textContent=`下载失败：${e.message}`; }
   };
-  actions.append(download); container.append(actions);
+  actions.append(download);
+  if(record.batchId){
+    for(const [rating,label] of [[5,"👍 好评并学习"],[1,"👎 记住并改进"]]){
+      const feedback=document.createElement("button");feedback.className="media-download";feedback.textContent=label;
+      feedback.onclick=async()=>{
+        if(feedback.dataset.editing==="true")return;
+        feedback.dataset.editing="true";feedback.hidden=true;
+        const input=document.createElement("input");input.className="feedback-input";
+        input.placeholder=rating===5?"哪里做得好？可留空":"希望下次改进什么？";
+        const save=document.createElement("button");save.className="media-download";save.textContent="保存并学习";
+        const cancel=document.createElement("button");cancel.className="media-download";cancel.textContent="取消";
+        save.onclick=async()=>{save.disabled=true;await mediaJson("/mira/feedback",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({batch_id:record.batchId,position:record.position||1,rating,note:input.value.trim(),learn:true})});input.remove();save.remove();cancel.remove();feedback.hidden=false;feedback.textContent="已记住";feedback.disabled=true;};
+        cancel.onclick=()=>{input.remove();save.remove();cancel.remove();feedback.hidden=false;delete feedback.dataset.editing;};
+        actions.append(input,save,cancel);input.focus();
+      };
+      actions.append(feedback);
+    }
+  }
+  container.append(actions);
 }
 
 const TASK_LABELS={image:"图片",music:"音乐",video:"视频"};
@@ -700,7 +785,8 @@ async function renderTaskCard(parent, id) {
       const completed=(task.items || []).filter(item=>item.status==="complete" && item.output).slice(-3);
       for(const item of completed){
         const out=document.createElement("div"); out.className="task-output"; card.append(out);
-        renderMedia(out,{kind:task.kind,url:item.output});
+        renderMedia(out,{kind:task.kind,url:item.output,batchId:task.id,position:item.position,
+                         qualityScore:item.quality_score});
       }
       if(!["complete","failed","cancelled"].includes(task.status)){
         const actions=document.createElement("div"); actions.className="task-actions";

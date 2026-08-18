@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Durable local generation queue for Mira's image, music and video tools."""
 import json
+import importlib.util
 import os
 import pathlib
 import sqlite3
@@ -12,6 +13,14 @@ import urllib.parse
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+try:
+    import iteration
+except ModuleNotFoundError:  # importlib-based tests do not add share/ to sys.path
+    _iteration_spec = importlib.util.spec_from_file_location(
+        "mira_iteration", pathlib.Path(__file__).with_name("iteration.py"))
+    iteration = importlib.util.module_from_spec(_iteration_spec)
+    _iteration_spec.loader.exec_module(iteration)
 
 PORT = int(os.environ.get("MIRA_JOBS_PORT", "9881"))
 CHAT_API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
@@ -65,6 +74,22 @@ AGENT_TOOLS = [
      "parameters": {"type": "object", "properties": {
          "batch_id": {"type": "string"}, "action": {"type": "string", "enum": ["pause", "resume", "cancel"]}},
          "required": ["batch_id", "action"]}}},
+    {"type": "function", "function": {"name": "remember_preference",
+     "description": "Persist an explicit user creative preference for future work",
+     "parameters": {"type": "object", "properties": {
+         "name": {"type": "string"}, "value": {"type": "string"}},
+         "required": ["name", "value"]}}},
+    {"type": "function", "function": {"name": "propose_self_update",
+     "description": "Create an isolated, tested Mira source-code candidate; never installs it",
+     "parameters": {"type": "object", "properties": {"goal": {"type": "string"}},
+                    "required": ["goal"]}}},
+    {"type": "function", "function": {"name": "prepare_lora_training",
+     "description": "Prepare, but do not start, a LoRA candidate from explicitly approved feedback",
+     "parameters": {"type": "object", "properties": {
+         "iters": {"type": "integer", "minimum": 10, "maximum": 5000}}}}},
+    {"type": "function", "function": {"name": "list_iterations",
+     "description": "List Preferences, Feedback statistics, and code/model Candidates",
+     "parameters": {"type": "object", "properties": {}}}},
 ]
 
 
@@ -105,6 +130,11 @@ def init_db():
         columns = {row[1] for row in db.execute("PRAGMA table_info(batches)")}
         if "request_id" not in columns:
             db.execute("ALTER TABLE batches ADD COLUMN request_id TEXT")
+        item_columns = {row[1] for row in db.execute("PRAGMA table_info(items)")}
+        if "quality_score" not in item_columns:
+            db.execute("ALTER TABLE items ADD COLUMN quality_score REAL")
+        if "attempts" not in item_columns:
+            db.execute("ALTER TABLE items ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS batches_request_id "
                    "ON batches(request_id) WHERE request_id IS NOT NULL")
 
@@ -162,7 +192,8 @@ def batch(batch_id, include_items=True):
         out = dict(row); out["spec"] = json.loads(out["spec"])
         if include_items:
             out["items"] = [dict(item) for item in db.execute(
-                "SELECT position,status,prompt,output,error FROM items WHERE batch_id=? ORDER BY position LIMIT 100",
+                "SELECT position,status,prompt,output,error,quality_score,attempts "
+                "FROM items WHERE batch_id=? ORDER BY position LIMIT 100",
                 (batch_id,))]
         return out
 
@@ -210,6 +241,17 @@ def execute_agent_tool(name, arguments, request_id=None):
     if name == "control_generation_task":
         result = action(str(arguments.get("batch_id", "")), str(arguments.get("action", "")))
         return result or {"error": "task not found"}, 200 if result else 404
+    if name == "remember_preference":
+        return iteration.remember(arguments.get("name"), arguments.get("value"),
+                                  "agent-explicit"), 200
+    if name == "propose_self_update":
+        return iteration.propose_code_candidate(arguments.get("goal")), 202
+    if name == "prepare_lora_training":
+        health = request_json(CHAT_API + "/health", timeout=5)
+        return iteration.prepare_training_candidate(
+            health.get("loaded_model"), arguments.get("iters", 100)), 202
+    if name == "list_iterations":
+        return iteration.overview(), 200
     return {"error": f"unknown tool {name}"}, 400
 
 
@@ -217,7 +259,8 @@ def agent_chat(body):
     incoming = body.get("messages", [])
     if not isinstance(incoming, list):
         raise ValueError("messages must be an array")
-    messages = [{"role": "system", "content": AGENT_SYSTEM}]
+    messages = [{"role": "system", "content": AGENT_SYSTEM + "\n\n" +
+                 iteration.memory_context()}]
     for message in incoming[-40:]:
         if isinstance(message, dict) and message.get("role") in ("user", "assistant"):
             content = message.get("content", "")
@@ -249,7 +292,8 @@ def agent_chat(body):
                                                   tool_request_id)
             except (ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
                 result, code = {"error": str(error)}, 400
-            if result.get("id") and result["id"] not in created:
+            if (call["function"]["name"].startswith("generate_") and result.get("id")
+                    and result["id"] not in created):
                 created.append(result["id"])
             messages.append({"role": "tool", "tool_call_id": call.get("id"),
                              "name": call["function"]["name"],
@@ -409,12 +453,13 @@ def run_media(kind, payload):
     return wait_media(kind, accepted.get("job_id"))
 
 
-def finish_item(selected, output, prompt=None, lyrics=None):
+def finish_item(selected, output, prompt=None, lyrics=None, quality_score=None):
     with db_lock, database() as db:
         changed = db.execute(
             "UPDATE items SET status='complete',prompt=COALESCE(?,prompt),"
-            "lyrics=COALESCE(?,lyrics),output=? WHERE id=? AND status='running'",
-            (prompt, lyrics, output, selected["item_id"])).rowcount
+            "lyrics=COALESCE(?,lyrics),output=?,quality_score=COALESCE(?,quality_score) "
+            "WHERE id=? AND status='running'",
+            (prompt, lyrics, output, quality_score, selected["item_id"])).rowcount
         if changed:
             db.execute("UPDATE batches SET completed=completed+1,updated=? WHERE id=?",
                        (time.time(), selected["id"]))
@@ -484,8 +529,25 @@ def worker():
         spec = json.loads(selected["spec"])
         try:
             prompt, lyrics = materialize(selected["kind"], spec, selected["position"], selected["total"])
-            output = run_media(selected["kind"], media_payload(selected["kind"], spec, prompt, lyrics))
-            finish_item(selected, output, prompt, lyrics)
+            quality = iteration.refine_creation(
+                selected["kind"], prompt, lyrics, model_json, selected["id"],
+                selected["position"], spec.get("quality_attempts", 2))
+            prompt, lyrics = quality["prompt"], quality["lyrics"]
+            attempts = max(1, min(3, int(spec.get("max_attempts", 2))))
+            output = None
+            for attempt in range(1, attempts + 1):
+                with database() as db:
+                    db.execute("UPDATE items SET attempts=? WHERE id=?",
+                               (attempt, selected["item_id"]))
+                try:
+                    output = run_media(
+                        selected["kind"], media_payload(selected["kind"], spec, prompt, lyrics))
+                    break
+                except Exception:
+                    if attempt >= attempts:
+                        raise
+                    time.sleep(2)
+            finish_item(selected, output, prompt, lyrics, quality.get("score"))
         except Exception as error:  # noqa: BLE001
             with db_lock, database() as db:
                 db.execute("UPDATE items SET status='failed',error=? WHERE id=?",
@@ -507,6 +569,7 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"{}")
     def do_GET(self):
         path = urllib.parse.urlsplit(self.path).path
+        if path == "/api/iterations": return self.send_json(iteration.overview())
         if path == "/api/jobs": return self.send_json(batches())
         if path.startswith("/api/jobs/"):
             result = batch(path.rsplit("/", 1)[-1])
@@ -519,6 +582,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(agent_chat_idempotent(self.read_json()))
             if self.path == "/api/jobs":
                 result, code = create_batch(self.read_json()); return self.send_json(result, code)
+            if self.path == "/api/feedback":
+                return self.send_json(iteration.record_feedback(self.read_json()), 201)
+            if self.path == "/api/preferences":
+                body = self.read_json()
+                return self.send_json(iteration.remember(
+                    body.get("name"), body.get("value"), "user", 1.0), 201)
+            if self.path == "/api/candidates/code":
+                return self.send_json(iteration.propose_code_candidate(
+                    self.read_json().get("goal")), 202)
+            if self.path == "/api/candidates/lora":
+                body = self.read_json()
+                health = request_json(CHAT_API + "/health", timeout=5)
+                return self.send_json(iteration.prepare_training_candidate(
+                    health.get("loaded_model"), body.get("iters", 100)), 202)
+            if self.path.startswith("/api/candidates/"):
+                parts = self.path.strip("/").split("/")
+                body = self.read_json()
+                if len(parts) == 4 and parts[3] == "apply":
+                    return self.send_json(iteration.apply_code_candidate(
+                        parts[2], body.get("confirmed") is True))
+                if len(parts) == 4 and parts[3] == "start":
+                    return self.send_json(iteration.start_training(
+                        parts[2], body.get("confirmed") is True))
             if self.path.startswith("/api/jobs/"):
                 parts = self.path.strip("/").split("/")
                 result = action(parts[2], parts[3]) if len(parts) == 4 else None

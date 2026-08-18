@@ -16,11 +16,15 @@ class DurableQueueTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.old_db = jobs.DB
+        self.old_iteration_db = jobs.iteration.DB
         jobs.DB = Path(self.temp.name) / "jobs.sqlite3"
+        jobs.iteration.DB = jobs.DB
         jobs.init_db()
+        jobs.iteration.init_db()
 
     def tearDown(self):
         jobs.DB = self.old_db
+        jobs.iteration.DB = self.old_iteration_db
         self.temp.cleanup()
 
     def test_batch_is_persisted_as_individual_queued_items(self):
@@ -103,6 +107,13 @@ class DurableQueueTests(unittest.TestCase):
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_agent_can_propose_but_cannot_approve_self_changes(self):
+        names = {tool["function"]["name"] for tool in jobs.AGENT_TOOLS}
+        self.assertIn("propose_self_update", names)
+        self.assertIn("prepare_lora_training", names)
+        self.assertNotIn("apply_code_candidate", names)
+        self.assertNotIn("start_training", names)
+
     def test_created_task_returns_immediately_without_a_second_model_round(self):
         replies = [
             {"loaded_model": "local/model"},

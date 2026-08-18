@@ -768,6 +768,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._image_proxy("/api/list")
         elif self.path == "/mira/jobs":
             self._jobs_proxy("/api/jobs")
+        elif self.path == "/mira/iterations":
+            self._jobs_proxy("/api/iterations")
         elif self.path.startswith("/mira/jobs/"):
             self._jobs_proxy("/api/jobs/" + self.path[len("/mira/jobs/"):])
         elif self.path.startswith("/v1/"):
@@ -831,6 +833,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not 0 <= length <= 50_000_000:
                 return self._send_json({"error": "request body is too large"}, 413)
             self._jobs_proxy("/api/agent", self.rfile.read(length))
+        elif self.path in ("/mira/feedback", "/mira/preferences",
+                           "/mira/candidates/code", "/mira/candidates/lora"):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send_json({"error": "invalid Content-Length"}, 400)
+            if not 0 <= length <= 1_000_000:
+                return self._send_json({"error": "request body is too large"}, 413)
+            endpoint = "/api/" + self.path[len("/mira/"):]
+            self._jobs_proxy(endpoint, self.rfile.read(length))
+        elif self.path.startswith("/mira/candidates/"):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send_json({"error": "invalid Content-Length"}, 400)
+            if not 0 <= length <= 1_000_000:
+                return self._send_json({"error": "request body is too large"}, 413)
+            self._jobs_proxy("/api/candidates/" + self.path[len("/mira/candidates/"):],
+                             self.rfile.read(length))
         elif self.path.startswith("/mira/jobs/"):
             try:
                 length = int(self.headers.get("Content-Length", 0))

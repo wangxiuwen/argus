@@ -13,6 +13,10 @@ an eye-slash when stopped.
 
 - **Tool-calling creative agent** — write normally in one conversation. The local chat model decides when to call image, music or video generation tools; there is no mode switch.
 - **Durable batch generation** — requests such as “create 100 songs” become persistent SQLite-backed batches with per-item prompts, progress, pause, resume and cancel controls. Closing the window or restarting Mira does not discard the queue.
+- **Bounded self-iteration** — every creation can pass through a local quality gate that critiques and refines its prompt, then retries generation a limited number of times instead of looping forever.
+- **Feedback-driven memory** — explicit likes, dislikes and saved preferences become durable context for later conversations and creations. Nothing is learned from a private result unless you choose to save it.
+- **Safe source iteration** — Mira can ask a coding agent to improve an isolated checkout, run its tests and present the result as a Candidate. It never edits or replaces the running application silently.
+- **Local LoRA candidates** — explicitly approved 4–5 star examples can be exported as MLX-LM chat JSONL and trained locally after a separate approval step. Adapters remain separate from the base model until you choose what to do with them.
 - **Large-run safeguard** — batches over 20 items or an estimated 5 GB require explicit confirmation before they are created. A single request may contain up to 1,000 outputs.
 - **Local image generation** — FLUX.2-klein 4B 4-bit creates PNG images locally. Its approximately 5 GB weights download only when first used.
 - **Local music generation** — MiniMax Music 3 8-bit turns a style prompt and sectioned lyrics into playable WAV files. Its approximately 13 GB weights download only when first used.
@@ -79,6 +83,21 @@ confirmation it generates each song serially, creates distinct prompts and
 lyrics just in time, and keeps running if the window is closed. Progress and
 completed outputs reappear in the same conversation. Queue state lives at
 `~/Library/Application Support/Mira/jobs.sqlite3`.
+
+### Self-iteration safety
+
+The desktop **Iteration Center** exposes four layers: bounded quality retries,
+durable preferences, isolated source Candidates, and local LoRA training runs.
+Creative refinement and remembered preferences can run automatically. Source
+changes and model training cannot: Mira first creates a reviewable Candidate,
+then waits for an explicit second click before applying it to its isolated source
+copy or starting a training process. The running app and base model are never
+silently overwritten.
+
+Iteration artifacts live at
+`~/Library/Application Support/Mira/iterations`. MLX-LM training support is
+optional and can be installed with `pip install "mlx-lm[train]"`. Quantized base
+models use QLoRA; resulting adapters are stored separately.
 
 ### CLI
 

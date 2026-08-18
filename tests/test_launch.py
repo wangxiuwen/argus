@@ -14,6 +14,24 @@ SPEC.loader.exec_module(launch)
 
 
 class CommandArgsTests(unittest.TestCase):
+    def test_codex_receives_loaded_model_explicitly(self):
+        args = launch.command_args(
+            "codex", "/bin/codex", launch.TOOLS["codex"],
+            "mlx-community/Qwen3.8-27B-4bit", "http://127.0.0.1:8092/v1", [])
+        self.assertEqual(args[-2:], [
+            "--model", "mlx-community/Qwen3.8-27B-4bit"])
+        self.assertIn('model_provider="argus"', args)
+        self.assertIn('model_providers.argus.wire_api="responses"', args)
+        self.assertIn(
+            'model_providers.argus.base_url="http://127.0.0.1:8092/v1"', args)
+
+    def test_codex_preserves_explicit_model_override(self):
+        args = launch.command_args(
+            "codex", "/bin/codex", launch.TOOLS["codex"],
+            "local/model", "http://127.0.0.1:8092/v1", ["-m", "custom/model"])
+        self.assertEqual(args[-2:], ["-m", "custom/model"])
+        self.assertIn('model_provider="argus"', args)
+
     def test_server_model_uses_health_not_downloaded_model_list_order(self):
         context = mock.MagicMock()
         context.__enter__.return_value = io.BytesIO(

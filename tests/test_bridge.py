@@ -62,6 +62,15 @@ class BrowserOriginTests(unittest.TestCase):
         self.assertFalse(bridge.trusted_browser_origin(None, 8092, "cross-site"))
 
 
+class OpenAIRouteTests(unittest.TestCase):
+    def test_codex_responses_routes_are_forwarded(self):
+        self.assertTrue(bridge.openai_passthrough_route("/v1/responses"))
+        self.assertTrue(bridge.openai_passthrough_route("/v1/responses/input_tokens"))
+
+    def test_unrelated_route_is_not_forwarded(self):
+        self.assertFalse(bridge.openai_passthrough_route("/v1/messages"))
+
+
 class TranslationTests(unittest.TestCase):
     def test_system_messages_are_merged_at_the_front(self):
         request = {

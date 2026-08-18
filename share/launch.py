@@ -141,6 +141,22 @@ def command_args(key, binary, tool, model, where, extra, claude_full=False,
         args.append("--bare")
     if key == "opencode" and not opencode_full and "--pure" not in extra:
         args.append("--pure")
+    if key == "codex":
+        # Codex ignores OPENAI_MODEL for its visible session model, and using
+        # an arbitrary model with the built-in `openai` provider is rejected
+        # for ChatGPT-authenticated users before a local request is sent.
+        # Register the Argus bridge as an explicit Responses-compatible local
+        # provider for this process only; the user's Codex config is untouched.
+        args += [
+            "--config", 'model_provider="argus"',
+            "--config", 'model_providers.argus.name="Argus Local"',
+            "--config", f"model_providers.argus.base_url={json.dumps(where)}",
+            "--config", 'model_providers.argus.env_key="OPENAI_API_KEY"',
+            "--config", 'model_providers.argus.wire_api="responses"',
+            "--config", "model_providers.argus.requires_openai_auth=false",
+        ]
+        if "--model" not in extra and "-m" not in extra:
+            args += ["--model", model]
     return args + extra
 
 

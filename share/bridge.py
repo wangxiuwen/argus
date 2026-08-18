@@ -38,6 +38,13 @@ MODEL_CACHE_SECONDS = 0.5
 _loaded = {"id": None, "at": 0.0}
 
 
+def openai_passthrough_route(route):
+    return route.endswith((
+        "/chat/completions", "/completions", "/embeddings",
+        "/responses", "/responses/input_tokens",
+    ))
+
+
 def trusted_browser_origin(origin, port, fetch_site=None):
     """Block web pages from spending local inference resources via CSRF."""
     if fetch_site == "cross-site":
@@ -404,8 +411,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 with urllib.request.urlopen(API + "/v1/models", timeout=5) as r:
                     data = json.load(r)
-                self._json({"data": [{"type": "model", "id": m["id"], "display_name": m["id"]}
-                                     for m in data.get("data", [])]})
+                rows = [{"type": "model", "id": m["id"], "display_name": m["id"]}
+                        for m in data.get("data", [])]
+                # OpenAI-compatible SDKs expect `data`; current Codex clients
+                # additionally refresh a richer `models` catalog.  Return both
+                # shapes so neither client has to fall back with a decode error.
+                self._json({
+                    "data": rows,
+                    "models": [{
+                        "slug": m["id"],
+                        "display_name": m["id"],
+                        "description": "Local model served by Argus",
+                        "default_reasoning_level": "medium",
+                        "supported_reasoning_levels": [],
+                        "shell_type": "shell_command",
+                        "visibility": "list",
+                        "supported_in_api": True,
+                        "priority": 1,
+                    } for m in rows],
+                })
             except OSError as e:
                 self._error(f"upstream unreachable: {e}", 502)
         else:
@@ -474,7 +498,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                "invalid_request_error")
 
         # OpenAI-shaped endpoints are proxied with the model pinned
-        if self.route.endswith(("/chat/completions", "/completions", "/embeddings")):
+        if openai_passthrough_route(self.route):
             return self._passthrough_openai(req)
 
         if self.route.endswith("count_tokens"):

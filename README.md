@@ -6,8 +6,8 @@ create images, compose music, or render videos without switching to a separate a
 
 Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`) that understands both **text and images**, running entirely on your machine. No cloud, no telemetry, no Electron.
 
-Mira appears in both the Dock and menu bar. The Dock uses a single-color parrot
-mark on a plain white background; the menu bar uses a native monochrome bird that changes
+Mira appears in both the Dock and menu bar. The Dock uses a single-color feather
+mark on a plain white background; the menu bar uses a native monochrome feather that changes
 color with the server state. Closing the chat window hides Mira from the Dock while keeping the
 menu bar app and services alive; minimizing the window keeps its Dock icon.
 
@@ -63,7 +63,7 @@ open ~/Applications/Mira.app
 
 ## Usage
 
-Click the menu bar bird → **Start Server**. The first run downloads the model; later runs load it in ~1–2 minutes. When the status says ready, the API is available:
+Click the menu bar feather → **Start Server**. The first run downloads the model; later runs load it in ~1–2 minutes. When the status says ready, the API is available:
 
 ```bash
 curl http://127.0.0.1:8090/v1/chat/completions -H 'Content-Type: application/json' -d '{

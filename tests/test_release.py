@@ -33,13 +33,13 @@ class ReleaseMetadataTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text()
         self.assertIn("Contents/Resources/Mira.icns", makefile)
 
-    def test_branding_uses_parrot_instead_of_eye_motifs(self):
+    def test_branding_uses_monochrome_feather_instead_of_eye_motifs(self):
         swift = (ROOT / "Mira" / "main.swift").read_text()
         page = (ROOT / "share" / "ui.html").read_text()
         readme = (ROOT / "README.md").read_text()
-        self.assertIn('symbol: String = "bird.fill"', swift)
+        self.assertIn('symbol: String = "feather"', swift)
         self.assertNotIn('systemSymbolName: "eye', swift)
-        self.assertIn("hero-parrot", page)
+        self.assertIn("hero-feather", page)
         self.assertIn('<img src="/mira/icon.png" alt="">', page)
         self.assertNotIn("🦜", page)
         self.assertNotIn("#f1ecff", page)
@@ -48,7 +48,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("background: #fff", page)
         self.assertNotIn("hero-eye", page)
         self.assertNotIn("brand-eye", page)
-        self.assertIn("parrot", readme.lower())
+        self.assertIn("feather", readme.lower())
 
         backend = (ROOT / "share" / "ui.py").read_text()
         self.assertIn('route == "/mira/icon.png"', backend)

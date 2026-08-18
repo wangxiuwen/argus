@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         return "http://\(clientHost):\(config.port)"
     }
 
-    func setTray(symbol: String = "bird.fill", color: NSColor = .secondaryLabelColor,
+    func setTray(symbol: String = "feather", color: NSColor = .secondaryLabelColor,
                  tooltip: String = "Mira") {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         let menu = NSMenu()
         menu.autoenablesItems = false
         let openItem = NSMenuItem(title: "Open Mira", action: #selector(openChat), keyEquivalent: "o")
-        openItem.image = NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)
+        openItem.image = NSImage(systemSymbolName: "feather", accessibilityDescription: nil)
         openItem.target = self
         let menuSize = NSFont.menuFont(ofSize: 0).pointSize
         openItem.attributedTitle = NSAttributedString(
@@ -404,7 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
                     self.setTray(color: .systemOrange, tooltip: "Mira · loading model")
                     self.statusLine.title = "Status: busy or loading model…"
                 } else {
-                    self.setTray(symbol: "bird", tooltip: "Mira · not running")
+                    self.setTray(symbol: "feather", tooltip: "Mira · not running")
                     self.statusLine.title = "Status: not running"
                 }
                 self.startItem.isEnabled = !(ready || alive)

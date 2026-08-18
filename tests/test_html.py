@@ -79,6 +79,12 @@ class HtmlTests(unittest.TestCase):
         self.assertIn("overflow: hidden", page)
         self.assertNotIn('<span class="agent-mode">', page)
 
+    def test_model_picker_distinguishes_selected_local_and_remote_models(self):
+        page = (ROOT / "share" / "ui.html").read_text()
+        self.assertIn('v.id === model ? "✓" : (v.downloaded ? "本地" : "↓")', page)
+        self.assertIn("replace(/\\s*\\([^)]*\\)\\s*$/, \"\")", page)
+        self.assertNotIn('mark.textContent = v.downloaded ? "✓"', page)
+
 
 if __name__ == "__main__":
     unittest.main()

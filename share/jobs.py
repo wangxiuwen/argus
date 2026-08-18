@@ -605,6 +605,9 @@ class Handler(BaseHTTPRequestHandler):
                 if len(parts) == 4 and parts[3] == "start":
                     return self.send_json(iteration.start_training(
                         parts[2], body.get("confirmed") is True))
+                if len(parts) == 4 and parts[3] == "publish":
+                    return self.send_json(iteration.publish_code_candidate(
+                        parts[2], body.get("confirmed") is True), 202)
             if self.path.startswith("/api/jobs/"):
                 parts = self.path.strip("/").split("/")
                 result = action(parts[2], parts[3]) if len(parts) == 4 else None

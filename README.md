@@ -100,6 +100,11 @@ then waits for an explicit second click before applying it to its isolated sourc
 copy or starting a training process. The running app and base model are never
 silently overwritten.
 
+An approved code Candidate can be published as a uniquely named GitHub branch
+and pull request. Mira reruns the test suite, blocks changes to GitHub automation,
+scans for private labels, and records the commit and PR URL. It never pushes to
+`main`, merges the PR, or creates a release automatically.
+
 Iteration artifacts live at
 `~/Library/Application Support/Mira/iterations`. MLX-LM training support is
 optional and can be installed with `pip install "mlx-lm[train]"`. Quantized base

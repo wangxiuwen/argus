@@ -24,6 +24,9 @@ DB = pathlib.Path(os.environ.get(
     "MIRA_JOBS_DB",
     pathlib.Path.home() / "Library" / "Application Support" / "Mira" / "jobs.sqlite3"))
 PUBLIC_REPO = "https://github.com/wangxiuwen/mira.git"
+PUBLIC_PUSH_REPO = os.environ.get(
+    "MIRA_PUBLIC_PUSH_REPO", "ssh://git@ssh.github.com:443/wangxiuwen/mira.git")
+PUBLIC_GH_REPO = os.environ.get("MIRA_PUBLIC_GH_REPO", "wangxiuwen/mira")
 MIRA = pathlib.Path.home() / ".local" / "bin" / "mira"
 lock = threading.RLock()
 
@@ -65,6 +68,10 @@ def init_db():
           command TEXT, created REAL NOT NULL, updated REAL NOT NULL
         );
         """)
+        columns = {row[1] for row in db.execute("PRAGMA table_info(candidates)")}
+        for name in ("branch", "published_commit", "pr_url"):
+            if name not in columns:
+                db.execute(f"ALTER TABLE candidates ADD COLUMN {name} TEXT")
 
 
 def remember(name, value, source="user", confidence=1.0):
@@ -252,10 +259,10 @@ def _build_code_candidate(candidate_id, goal, path):
                                        text=True, timeout=7200)
         tests = subprocess.run(["make", "test"], cwd=path, capture_output=True,
                                text=True, timeout=1800)
-        diff = subprocess.run(["git", "diff", "--stat"], cwd=path,
-                              capture_output=True, text=True, timeout=30).stdout
-        summary = diff.strip() or "Candidate produced no source changes."
-        status = "ready" if completed.returncode == 0 and tests.returncode == 0 and diff.strip() else "failed"
+        changed = subprocess.run(["git", "status", "--short"], cwd=path,
+                                 capture_output=True, text=True, timeout=30).stdout
+        summary = changed.strip() or "Candidate produced no source changes."
+        status = "ready" if completed.returncode == 0 and tests.returncode == 0 and changed.strip() else "failed"
         _update_candidate(candidate_id, status=status, summary=summary,
                           log=str(log_path), error=None if status == "ready" else
                           f"codex={completed.returncode}, tests={tests.returncode}")
@@ -283,6 +290,103 @@ def apply_code_candidate(candidate_id, confirmed=False):
                    check=True, timeout=60)
     _update_candidate(candidate_id, status="applied", summary=candidate["summary"])
     return _candidate(candidate_id)
+
+
+def _publication_changes(path):
+    changed = subprocess.run(
+        ["git", "diff", "--cached", "--name-only", "-z"], cwd=path,
+        check=True, capture_output=True, timeout=60).stdout.split(b"\0")
+    names = [value.decode("utf-8", "strict") for value in changed if value]
+    protected = [name for name in names if name.startswith((".github/workflows/", ".github/actions/"))
+                 or name == ".gitmodules"]
+    if protected:
+        raise RuntimeError("self-published Candidates cannot change protected automation: " +
+                           ", ".join(protected))
+    private_values = [pathlib.Path.home().name, str(pathlib.Path.home()), "company/"]
+    private_values.extend(os.environ.get("MIRA_PRIVATE_LABELS", "").split(","))
+    sensitive = tuple(value.strip().lower().encode() for value in private_values if value.strip())
+    for name in names:
+        file_path = path / name
+        if file_path.is_symlink():
+            raise RuntimeError(f"self-published Candidates cannot add symlinks: {name}")
+        if file_path.is_file() and file_path.stat().st_size <= 2_000_000:
+            content = file_path.read_bytes().lower()
+            if any(value in content for value in sensitive):
+                raise RuntimeError(f"privacy scan rejected {name}")
+    return names
+
+
+def _create_or_find_pr(branch, title, body):
+    existing = subprocess.run(
+        ["gh", "pr", "view", branch, "--repo", PUBLIC_GH_REPO,
+         "--json", "url", "--jq", ".url"], capture_output=True, text=True, timeout=60)
+    if existing.returncode == 0 and existing.stdout.strip():
+        return existing.stdout.strip()
+    created = subprocess.run(
+        ["gh", "pr", "create", "--repo", PUBLIC_GH_REPO, "--base", "main",
+         "--head", branch, "--title", title, "--body", body],
+        check=True, capture_output=True, text=True, timeout=120)
+    return created.stdout.strip().splitlines()[-1]
+
+
+def publish_code_candidate(candidate_id, confirmed=False):
+    candidate = _candidate(candidate_id)
+    if not candidate:
+        raise ValueError("candidate not found")
+    if candidate["kind"] != "code" or candidate["status"] not in (
+            "ready", "applied", "publish_failed"):
+        raise ValueError("code candidate is not publishable")
+    if confirmed is not True:
+        raise ValueError("explicit publication approval is required")
+    if not shutil.which("gh"):
+        raise RuntimeError("GitHub CLI is required to publish a PR")
+    auth = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=30)
+    if auth.returncode:
+        raise RuntimeError("GitHub CLI is not authenticated")
+    branch = candidate.get("branch") or f"mira/iteration-{candidate_id}"
+    _update_candidate(candidate_id, status="publishing", branch=branch, error=None)
+    threading.Thread(target=_publication_worker,
+                     args=(candidate_id, branch), daemon=True).start()
+    return _candidate(candidate_id)
+
+
+def _publication_worker(candidate_id, branch):
+    candidate = _candidate(candidate_id)
+    path = pathlib.Path(candidate["path"])
+    try:
+        tests = subprocess.run(["make", "test"], cwd=path, capture_output=True,
+                               text=True, timeout=1800)
+        if tests.returncode:
+            raise RuntimeError(f"publication tests failed ({tests.returncode})")
+        subprocess.run(["git", "checkout", "-B", branch], cwd=path,
+                       check=True, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", "add", "-A"], cwd=path, check=True,
+                       capture_output=True, timeout=60)
+        names = _publication_changes(path)
+        staged = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=path,
+                                timeout=60)
+        title = "Mira iteration: " + " ".join(candidate["goal"].split())[:60]
+        if staged.returncode != 0:
+            subprocess.run(
+                ["git", "-c", "user.name=Mira Iteration",
+                 "-c", "user.email=mira-iteration@users.noreply.github.com",
+                 "commit", "-m", title], cwd=path, check=True,
+                capture_output=True, text=True, timeout=120)
+        elif not candidate.get("published_commit"):
+            raise RuntimeError("Candidate has no changes to publish")
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=path, check=True,
+                                capture_output=True, text=True, timeout=30).stdout.strip()
+        _update_candidate(candidate_id, published_commit=commit)
+        subprocess.run(["git", "push", PUBLIC_PUSH_REPO, f"HEAD:refs/heads/{branch}"],
+                       cwd=path, check=True, capture_output=True, text=True, timeout=300)
+        body = (f"Automated Candidate `{candidate_id}` for an explicitly approved Mira Iteration.\n\n"
+                f"Goal: {candidate['goal']}\n\n"
+                f"Local `make test` passed before publication. Changed files: {len(names)}.\n\n"
+                "This PR was not merged automatically.")
+        pr_url = _create_or_find_pr(branch, title, body)
+        _update_candidate(candidate_id, status="published", pr_url=pr_url, error=None)
+    except Exception as error:  # noqa: BLE001
+        _update_candidate(candidate_id, status="publish_failed", error=str(error))
 
 
 def prepare_training_candidate(model, iters=100):

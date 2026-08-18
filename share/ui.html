@@ -595,7 +595,7 @@ $("launchBtn").onclick = () => {
 
 function candidateLabel(candidate) {
   const kind = candidate.kind === "code" ? "源码" : "模型适配";
-  const states={queued:"排队中",preparing:"准备中",running:"运行中",ready:"待批准",insufficient_data:"数据不足",complete:"已完成",failed:"失败",applied:"已应用"};
+  const states={queued:"排队中",preparing:"准备中",running:"运行中",ready:"待批准",insufficient_data:"数据不足",complete:"已完成",failed:"失败",applied:"已应用",publishing:"正在发布 PR",published:"PR 已创建",publish_failed:"发布失败"};
   return `${kind}候选 · ${states[candidate.status] || candidate.status}`;
 }
 async function candidateApproval(id, action) {
@@ -629,7 +629,7 @@ async function renderIterations() {
     box.append(train);
     $("makeLora").onclick=async()=>{await mediaJson("/mira/candidates/lora",{method:"POST",headers:{"Content-Type":"application/json"},body:'{"iters":100}'});renderIterations();};
     const list=document.createElement("section"); list.className="iteration-section"; list.innerHTML="<h3>迭代候选</h3>";
-    for(const c of data.candidates){const row=document.createElement("div");row.className="candidate-row";row.append(document.createTextNode(candidateLabel(c)));const meta=document.createElement("div");meta.className="candidate-meta";meta.textContent=c.summary || c.goal || c.error || "";row.append(meta);let action=null,label="";if(c.kind==="code"&&c.status==="ready"){action="apply";label="批准应用到源码副本";}if(c.kind==="lora"&&c.status==="ready"){action="start";label="批准开始训练";}if(action){const b=document.createElement("button");b.className="media-download";b.textContent=label;b.onclick=()=>{if(b.dataset.armed!=="true"){b.dataset.armed="true";b.textContent="再次点击确认（不会覆盖当前 Mira）";return;}b.disabled=true;b.textContent="正在执行…";candidateApproval(c.id,action).catch(e=>{b.disabled=false;b.textContent=`失败：${e.message}`;});};row.append(b);}list.append(row);}box.append(list);
+    for(const c of data.candidates){const row=document.createElement("div");row.className="candidate-row";row.append(document.createTextNode(candidateLabel(c)));const meta=document.createElement("div");meta.className="candidate-meta";meta.textContent=c.error || c.summary || c.goal || "";row.append(meta);if(c.pr_url){const link=document.createElement("a");link.href=c.pr_url;link.target="_blank";link.rel="noopener noreferrer";link.className="media-download";link.textContent="打开 GitHub PR";row.append(link);}let action=null,label="";if(c.kind==="code"&&["ready","applied","publish_failed"].includes(c.status)){action="publish";label=c.status==="publish_failed"?"重新批准发布 PR":"批准发布 GitHub PR";}if(c.kind==="lora"&&c.status==="ready"){action="start";label="批准开始训练";}if(action){const b=document.createElement("button");b.className="media-download";b.textContent=label;b.onclick=()=>{if(b.dataset.armed!=="true"){b.dataset.armed="true";b.textContent=action==="publish"?"再次点击确认：创建分支和 PR":"再次点击确认（不会覆盖当前 Mira）";return;}b.disabled=true;b.textContent="正在执行…";candidateApproval(c.id,action).catch(e=>{b.disabled=false;b.textContent=`失败：${e.message}`;});};row.append(b);}list.append(row);}box.append(list);if(data.candidates.some(c=>["queued","preparing","running","publishing"].includes(c.status)))setTimeout(renderIterations,3000);
   } catch(e) { box.textContent=`迭代状态读取失败：${e.message}`; }
 }
 $("iterationBtn").onclick=renderIterations;

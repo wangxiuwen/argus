@@ -24,7 +24,7 @@ OUT = str(LEGACY_OUT if LEGACY_OUT.exists() else pathlib.Path.home() / "Music" /
 PORT = int(os.environ.get("MIRA_MUSIC_PORT", "9879"))
 os.makedirs(OUT, exist_ok=True)
 state = {"stage": "idle", "error": None, "output": None, "progress": None,
-         "job_id": None}
+         "job_id": None, "started_at": None}
 lock = threading.Lock()
 
 
@@ -207,6 +207,8 @@ class H(BaseHTTPRequestHandler):
                 "model": MODEL, "output_dir": OUT, "output": state.get("output"),
                 "progress": state.get("progress"),
             }
+            if stage == "generating" and state.get("started_at"):
+                result["progress"] = {"elapsed": round(time.time() - state["started_at"])}
             if stage == "preparing":
                 have = tree_bytes(MODEL_DIR)
                 result["download"] = {"bytes": have, "total": EXPECTED_BYTES,
@@ -254,7 +256,7 @@ class H(BaseHTTPRequestHandler):
             if state["stage"] in ("preparing", "generating"):
                 return self._send(409, b'{"error":"busy"}')
             state.update(stage="generating", error=None, output=None, progress=None,
-                         job_id=job_id)
+                         job_id=job_id, started_at=time.time())
         generate_music(body)
         self._send(202, json.dumps({"ok": True, "job_id": job_id}).encode())
 

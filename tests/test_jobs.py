@@ -52,15 +52,42 @@ class DurableQueueTests(unittest.TestCase):
                                (result["id"],)).fetchone()[0]
         self.assertEqual(count, 1000)
 
+    def test_request_id_makes_retried_batch_creation_idempotent(self):
+        body = {"kind": "music", "prompt": "one song", "request_id": "chat-1:0"}
+        first, first_code = jobs.create_batch(body)
+        second, second_code = jobs.create_batch(body)
+        self.assertEqual((first_code, second_code), (202, 202))
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(len(jobs.batches()), 1)
+
     def test_restart_requeues_interrupted_items(self):
         result, _ = jobs.create_batch({"kind": "video", "prompt": "forest"})
         with jobs.database() as db:
             db.execute("UPDATE batches SET status='running' WHERE id=?", (result["id"],))
             db.execute("UPDATE items SET status='running' WHERE batch_id=?", (result["id"],))
         jobs.init_db()
+        with mock.patch.object(jobs, "request_json", return_value={"running": False}):
+            jobs.recover_running()
         stored = jobs.batch(result["id"])
         self.assertEqual(stored["status"], "queued")
         self.assertEqual(stored["items"][0]["status"], "queued")
+
+    def test_restart_adopts_media_that_is_still_generating(self):
+        result, _ = jobs.create_batch({"kind": "music", "prompt": "song", "lyrics": "la"})
+        with jobs.database() as db:
+            db.execute("UPDATE batches SET status='running' WHERE id=?", (result["id"],))
+            db.execute("UPDATE items SET status='running' WHERE batch_id=?", (result["id"],))
+        replies = [
+            {"running": True, "job_id": "job-1"},
+            {"running": False, "job_id": "job-1", "output": "/files/song.wav"},
+        ]
+        with mock.patch.object(jobs, "request_json", side_effect=replies):
+            jobs.recover_running()
+        stored = jobs.batch(result["id"])
+        self.assertEqual(stored["status"], "complete")
+        self.assertEqual(stored["completed"], 1)
+        self.assertEqual(stored["items"][0]["output"],
+                         "http://127.0.0.1:9879/files/song.wav")
 
     def test_pause_resume_and_cancel_are_durable_state_transitions(self):
         result, _ = jobs.create_batch({"kind": "image", "count": 2, "prompt": "cats"})
@@ -76,21 +103,29 @@ class DurableQueueTests(unittest.TestCase):
 
 
 class AgentLoopTests(unittest.TestCase):
-    def test_model_tool_call_creates_a_task_and_returns_it_to_model(self):
+    def test_created_task_returns_immediately_without_a_second_model_round(self):
         replies = [
             {"loaded_model": "local/model"},
             {"choices": [{"message": {"role": "assistant", "content": "",
                 "tool_calls": [{"id": "call_1", "type": "function", "function": {
                     "name": "generate_images", "arguments": json.dumps({"prompt": "cat"})}}]}}]},
-            {"loaded_model": "local/model"},
-            {"choices": [{"message": {"role": "assistant", "content": "已创建。"}}]},
         ]
         with mock.patch.object(jobs, "request_json", side_effect=replies), \
                 mock.patch.object(jobs, "execute_agent_tool",
                                   return_value=({"id": "batch123"}, 202)):
             result = jobs.agent_chat({"messages": [{"role": "user", "content": "画一只猫"}]})
-        self.assertEqual(result["content"], "已创建。")
+        self.assertIn("已创建", result["content"])
         self.assertEqual(result["tasks"], ["batch123"])
+
+    def test_reopened_webview_reuses_the_same_agent_request(self):
+        request = {"request_id": "request-1", "messages": []}
+        jobs.agent_results.pop("request-1", None)
+        expected = {"content": "任务已创建。", "tasks": ["batch123"]}
+        with mock.patch.object(jobs, "agent_chat", return_value=expected) as run:
+            self.assertEqual(jobs.agent_chat_idempotent(request), expected)
+            self.assertEqual(jobs.agent_chat_idempotent(request), expected)
+        self.assertEqual(run.call_count, 1)
+        jobs.agent_results.pop("request-1", None)
 
 
 if __name__ == "__main__":

@@ -25,6 +25,9 @@ DB = pathlib.Path(os.environ.get(
 DB.parent.mkdir(parents=True, exist_ok=True)
 db_lock = threading.RLock()
 wake = threading.Event()
+agent_lock = threading.Lock()
+agent_inflight = {}
+agent_results = {}
 
 AGENT_SYSTEM = """You are Mira, a local creative agent. Image, music and video generation are
 tools, not separate chat modes. Use a tool whenever the user asks you to create media. For
@@ -89,7 +92,7 @@ def init_db():
           id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
           total INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
           failed INTEGER NOT NULL DEFAULT 0, spec TEXT NOT NULL,
-          error TEXT, created REAL NOT NULL, updated REAL NOT NULL
+          request_id TEXT, error TEXT, created REAL NOT NULL, updated REAL NOT NULL
         );
         CREATE TABLE IF NOT EXISTS items (
           id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id TEXT NOT NULL,
@@ -99,8 +102,11 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS items_batch_status ON items(batch_id,status,position);
         """)
-        db.execute("UPDATE items SET status='queued' WHERE status='running'")
-        db.execute("UPDATE batches SET status='queued' WHERE status='running'")
+        columns = {row[1] for row in db.execute("PRAGMA table_info(batches)")}
+        if "request_id" not in columns:
+            db.execute("ALTER TABLE batches ADD COLUMN request_id TEXT")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS batches_request_id "
+                   "ON batches(request_id) WHERE request_id IS NOT NULL")
 
 
 def estimate_bytes(kind, count, spec):
@@ -121,6 +127,15 @@ def create_batch(body):
     prompt = str(body.get("prompt", "")).strip()
     if not prompt:
         raise ValueError("prompt is required")
+    request_id = str(body.get("request_id", "")).strip() or None
+    if request_id and len(request_id) > 200:
+        raise ValueError("request_id is too long")
+    if request_id:
+        with database() as db:
+            existing = db.execute("SELECT id FROM batches WHERE request_id=?",
+                                  (request_id,)).fetchone()
+        if existing:
+            return batch(existing["id"]), 202
     estimated = estimate_bytes(kind, count, body)
     if (count > 20 or estimated > 5_000_000_000) and body.get("confirmed") is not True:
         return {"confirmation_required": True, "kind": kind, "count": count,
@@ -129,8 +144,10 @@ def create_batch(body):
     now = time.time()
     spec = dict(body); spec.pop("confirmed", None)
     with db_lock, database() as db:
-        db.execute("INSERT INTO batches(id,kind,status,total,spec,created,updated) VALUES(?,?,?,?,?,?,?)",
-                   (batch_id, kind, "queued", count, json.dumps(spec, ensure_ascii=False), now, now))
+        db.execute("INSERT INTO batches(id,kind,status,total,spec,request_id,created,updated) "
+                   "VALUES(?,?,?,?,?,?,?,?)",
+                   (batch_id, kind, "queued", count, json.dumps(spec, ensure_ascii=False),
+                    request_id, now, now))
         db.executemany("INSERT INTO items(batch_id,position) VALUES(?,?)",
                        ((batch_id, position) for position in range(1, count + 1)))
     wake.set()
@@ -179,11 +196,13 @@ def action(batch_id, name):
     return batch(batch_id)
 
 
-def execute_agent_tool(name, arguments):
+def execute_agent_tool(name, arguments, request_id=None):
     if name in ("generate_images", "generate_music", "generate_videos"):
         kind = {"generate_images": "image", "generate_music": "music",
                 "generate_videos": "video"}[name]
         payload = dict(arguments); payload["kind"] = kind
+        if request_id:
+            payload["request_id"] = request_id
         result, code = create_batch(payload)
         return result, code
     if name == "list_generation_tasks":
@@ -221,10 +240,13 @@ def agent_chat(body):
                     "model": model}
         messages.append({"role": "assistant", "content": assistant.get("content") or "",
                          "tool_calls": calls})
-        for call in calls:
+        for call_index, call in enumerate(calls):
             try:
                 arguments = json.loads(call["function"].get("arguments") or "{}")
-                result, code = execute_agent_tool(call["function"]["name"], arguments)
+                request_id = str(body.get("request_id", "")).strip()
+                tool_request_id = f"{request_id}:{call_index}" if request_id else None
+                result, code = execute_agent_tool(call["function"]["name"], arguments,
+                                                  tool_request_id)
             except (ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
                 result, code = {"error": str(error)}, 400
             if result.get("id") and result["id"] not in created:
@@ -232,7 +254,49 @@ def agent_chat(body):
             messages.append({"role": "tool", "tool_call_id": call.get("id"),
                              "name": call["function"]["name"],
                              "content": json.dumps({"status": code, **result}, ensure_ascii=False)})
+        if created:
+            return {"content": "任务已创建，正在后台生成。", "tasks": created,
+                    "model": model}
     return {"content": "工具调用次数过多，已停止这一轮。", "tasks": created}
+
+
+def agent_chat_idempotent(body):
+    """Coalesce retries from a reopened WebView under one durable request id."""
+    request_id = str(body.get("request_id", "")).strip()
+    if not request_id:
+        return agent_chat(body)
+    if len(request_id) > 160:
+        raise ValueError("request_id is too long")
+    with agent_lock:
+        cached = agent_results.get(request_id)
+        if cached is not None:
+            return cached
+        state = agent_inflight.get(request_id)
+        leader = state is None
+        if leader:
+            state = {"event": threading.Event(), "result": None, "error": None}
+            agent_inflight[request_id] = state
+    if not leader:
+        if not state["event"].wait(920):
+            raise RuntimeError("Agent request is still running")
+        if state["error"]:
+            raise RuntimeError(state["error"])
+        return state["result"]
+    try:
+        result = agent_chat(body)
+        state["result"] = result
+        with agent_lock:
+            agent_results[request_id] = result
+            while len(agent_results) > 200:
+                agent_results.pop(next(iter(agent_results)))
+        return result
+    except Exception as error:  # noqa: BLE001
+        state["error"] = str(error)
+        raise
+    finally:
+        state["event"].set()
+        with agent_lock:
+            agent_inflight.pop(request_id, None)
 
 
 def request_json(url, payload=None, timeout=1800):
@@ -303,23 +367,8 @@ def position_seed(prompt):
     return abs(hash(prompt)) % (2**31)
 
 
-def run_media(kind, payload):
+def wait_media(kind, job_id=None):
     base = BASES[kind]
-    try:
-        accepted = request_json(base + "/api/generate", payload)
-    except RuntimeError as error:
-        if "not prepared" not in str(error).lower() and "尚未准备" not in str(error):
-            raise
-        request_json(base + "/api/prepare", {"accept_license": True})
-        while True:
-            status = request_json(base + "/api/status")
-            if status.get("error"):
-                raise RuntimeError(status["error"])
-            if status.get("model_ready") and not status.get("running"):
-                break
-            time.sleep(3)
-        accepted = request_json(base + "/api/generate", payload)
-    job_id = accepted.get("job_id")
     while True:
         status = request_json(base + "/api/status")
         if status.get("error"):
@@ -341,6 +390,82 @@ def run_media(kind, payload):
         time.sleep(2)
 
 
+def run_media(kind, payload):
+    base = BASES[kind]
+    try:
+        accepted = request_json(base + "/api/generate", payload)
+    except RuntimeError as error:
+        if "not prepared" not in str(error).lower() and "尚未准备" not in str(error):
+            raise
+        request_json(base + "/api/prepare", {"accept_license": True})
+        while True:
+            status = request_json(base + "/api/status")
+            if status.get("error"):
+                raise RuntimeError(status["error"])
+            if status.get("model_ready") and not status.get("running"):
+                break
+            time.sleep(3)
+        accepted = request_json(base + "/api/generate", payload)
+    return wait_media(kind, accepted.get("job_id"))
+
+
+def finish_item(selected, output, prompt=None, lyrics=None):
+    with db_lock, database() as db:
+        changed = db.execute(
+            "UPDATE items SET status='complete',prompt=COALESCE(?,prompt),"
+            "lyrics=COALESCE(?,lyrics),output=? WHERE id=? AND status='running'",
+            (prompt, lyrics, output, selected["item_id"])).rowcount
+        if changed:
+            db.execute("UPDATE batches SET completed=completed+1,updated=? WHERE id=?",
+                       (time.time(), selected["id"]))
+    finalize_batch(selected["id"])
+
+
+def finalize_batch(batch_id):
+    with db_lock, database() as db:
+        remaining = db.execute(
+            "SELECT count(*) FROM items WHERE batch_id=? AND status IN ('queued','running')",
+            (batch_id,)).fetchone()[0]
+        current = db.execute("SELECT status,failed FROM batches WHERE id=?",
+                             (batch_id,)).fetchone()
+        if remaining == 0 and current["status"] not in ("cancelled", "paused"):
+            db.execute("UPDATE batches SET status=?,updated=? WHERE id=?",
+                       ("failed" if current["failed"] else "complete", time.time(), batch_id))
+
+
+def recover_running():
+    """Adopt media still computing after the task daemon was restarted."""
+    with database() as db:
+        rows = [dict(row) for row in db.execute("""
+          SELECT i.id item_id,i.position,b.* FROM items i JOIN batches b ON b.id=i.batch_id
+          WHERE i.status='running' AND b.status='running' ORDER BY b.created,i.position""")]
+    for selected in rows:
+        try:
+            status = request_json(BASES[selected["kind"]] + "/api/status", timeout=5)
+        except Exception:  # service disappeared; safely retry the item
+            status = {}
+        if not status.get("running"):
+            with db_lock, database() as db:
+                db.execute("UPDATE items SET status='queued' WHERE id=? AND status='running'",
+                           (selected["item_id"],))
+                db.execute("UPDATE batches SET status='queued',updated=? WHERE id=? AND status='running'",
+                           (time.time(), selected["id"]))
+            wake.set()
+            continue
+        try:
+            output = wait_media(selected["kind"], status.get("job_id"))
+            spec = json.loads(selected["spec"])
+            finish_item(selected, output, str(spec.get("prompt", "")),
+                        str(spec.get("lyrics", "")))
+        except Exception as error:  # noqa: BLE001
+            with db_lock, database() as db:
+                db.execute("UPDATE items SET status='failed',error=? WHERE id=? AND status='running'",
+                           (str(error), selected["item_id"]))
+                db.execute("UPDATE batches SET failed=failed+1,error=?,updated=? WHERE id=?",
+                           (str(error), time.time(), selected["id"]))
+            finalize_batch(selected["id"])
+
+
 def worker():
     while True:
         selected = None
@@ -360,24 +485,14 @@ def worker():
         try:
             prompt, lyrics = materialize(selected["kind"], spec, selected["position"], selected["total"])
             output = run_media(selected["kind"], media_payload(selected["kind"], spec, prompt, lyrics))
-            with db_lock, database() as db:
-                db.execute("UPDATE items SET status='complete',prompt=?,lyrics=?,output=? WHERE id=?",
-                           (prompt, lyrics, output, selected["item_id"]))
-                db.execute("UPDATE batches SET completed=completed+1,updated=? WHERE id=?",
-                           (time.time(), selected["id"]))
+            finish_item(selected, output, prompt, lyrics)
         except Exception as error:  # noqa: BLE001
             with db_lock, database() as db:
                 db.execute("UPDATE items SET status='failed',error=? WHERE id=?",
                            (str(error), selected["item_id"]))
                 db.execute("UPDATE batches SET failed=failed+1,error=?,updated=? WHERE id=?",
                            (str(error), time.time(), selected["id"]))
-        with db_lock, database() as db:
-            remaining = db.execute("SELECT count(*) FROM items WHERE batch_id=? AND status IN ('queued','running')",
-                                   (selected["id"],)).fetchone()[0]
-            current = db.execute("SELECT status,failed FROM batches WHERE id=?", (selected["id"],)).fetchone()
-            if remaining == 0 and current["status"] not in ("cancelled", "paused"):
-                db.execute("UPDATE batches SET status=?,updated=? WHERE id=?",
-                           ("failed" if current["failed"] else "complete", time.time(), selected["id"]))
+            finalize_batch(selected["id"])
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -401,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             if self.path == "/api/agent":
-                return self.send_json(agent_chat(self.read_json()))
+                return self.send_json(agent_chat_idempotent(self.read_json()))
             if self.path == "/api/jobs":
                 result, code = create_batch(self.read_json()); return self.send_json(result, code)
             if self.path.startswith("/api/jobs/"):
@@ -415,5 +530,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     init_db()
+    threading.Thread(target=recover_running, daemon=True).start()
     threading.Thread(target=worker, daemon=True).start()
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

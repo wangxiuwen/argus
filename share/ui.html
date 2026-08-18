@@ -120,7 +120,7 @@
   .msg.user { justify-content: flex-end; }
   .bubble { padding: 9px 13px; border-radius: 16px; white-space: pre-wrap; word-break: break-word; max-width: 88%; }
   .user .bubble { background: var(--user-bubble); }
-  .bot .bubble { padding-left: 0; padding-right: 0; max-width: 100%; }
+  .bot .bubble { padding-left: 0; padding-right: 0; max-width: 100%; flex: 1; min-width: 0; }
   .bubble img { max-width: 240px; max-height: 240px; border-radius: 10px; display: block; margin-bottom: 6px; }
   .bubble .generated-image { max-width: min(680px,100%); max-height: 680px; border: 1px solid var(--border); }
   .bubble video { display: block; width: min(680px,100%); aspect-ratio: 16/9; border-radius: 12px; background: #09090b; }
@@ -226,7 +226,12 @@
     #pickerBtn { max-width: 180px; }
   }
   /* waiting indicator: pulsing dots + elapsed seconds until the first token lands */
-  .waiting { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .waiting {
+    display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px;
+    padding: 9px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--field);
+  }
+  .waiting .stage { color: var(--text); }
+  .waiting .secs { min-width: 42px; text-align: right; }
   .dots { display: inline-flex; gap: 4px; }
   .dots i {
     width: 6px; height: 6px; border-radius: 50%; background: currentColor;
@@ -330,6 +335,7 @@ function useSuggestion(button) {
   input.dispatchEvent(new Event("input"));
 }
 let chats = [], curId = null;
+const activeAgentRequests = new Set();
 
 function setSidebar(hidden) {
   $("side").classList.toggle("hidden", hidden);
@@ -356,6 +362,37 @@ function loadChats() {
     const saved = JSON.parse(localStorage.getItem("argus.chats") || "[]");
     chats = Array.isArray(saved) ? saved : [];
   } catch { chats = []; }
+}
+function titleMatchesKind(title, kind) {
+  const words = {
+    image: /图片|图像|画|照片|image/i,
+    music: /歌|音乐|歌曲|配乐|music|song/i,
+    video: /视频|影片|动画|video/i,
+  };
+  return words[kind]?.test(title || "");
+}
+async function recoverUnlinkedTasks() {
+  try {
+    const tasks = await fetch("/mira/jobs").then(r => r.json());
+    const linked = new Set(chats.flatMap(c => c.messages.flatMap(m => m.tasks || [])));
+    let changed = false;
+    for (const task of tasks) {
+      if (linked.has(task.id)) continue;
+      const createdMs = Number(task.created) * 1000;
+      const candidate = chats.find(c => {
+        const last = c.messages[c.messages.length - 1];
+        const chatMs = Number(c.id);
+        return last?.role === "user" && !last.requestId && titleMatchesKind(c.title, task.kind)
+          && Number.isFinite(chatMs) && createdMs >= chatMs - 30_000
+          && createdMs - chatMs < 10 * 60_000;
+      });
+      if (!candidate) continue;
+      candidate.messages.push({role:"assistant", content:"已恢复后台生成任务。",
+                               tasks:[task.id], status:"complete"});
+      linked.add(task.id); changed = true;
+    }
+    if (changed) { saveChats(); renderChats(); if (curId) openChat(curId); }
+  } catch { /* task service may still be starting */ }
 }
 function saveChats() {
   // data: URLs from screenshots can exceed localStorage's small quota and used
@@ -459,12 +496,14 @@ function openChat(id) {
       else card.textContent = `生成失败：${m.error || "任务未完成"}`;
     }
     for (const taskId of (m.tasks || [])) renderTaskCard(b, taskId);
+    if (m.status === "planning" && m.requestId) runAgentRequest(m, b, id);
   }
   renderChats();
 }
 $("newChat").onclick = () => { showChat(); newChat(); };
 loadChats();
 renderChats();
+recoverUnlinkedTasks();
 
 /* ---------- Launch view ---------- */
 const LAUNCH = api => [
@@ -648,7 +687,13 @@ async function renderTaskCard(parent, id) {
       card.innerHTML="";
       const head=document.createElement("div"); head.className="task-head";
       head.append(document.createTextNode(`${TASK_LABELS[task.kind] || task.kind}批任务 · ${task.total} 项`));
-      const state=document.createElement("span"); state.className="task-state"; state.textContent=TASK_STATES[task.status] || task.status; head.append(state); card.append(head);
+      const state=document.createElement("span"); state.className="task-state";
+      let stateText=TASK_STATES[task.status] || task.status;
+      if(task.status==="running"){
+        const elapsed=Math.max(0,Math.round(Date.now()/1000-task.updated));
+        stateText+=elapsed<60?` · ${elapsed} 秒`:` · ${Math.floor(elapsed/60)} 分 ${elapsed%60} 秒`;
+      }
+      state.textContent=stateText; head.append(state); card.append(head);
       const row=document.createElement("div"); row.className="task-progress";
       const bar=document.createElement("progress"); bar.max=task.total; bar.value=task.completed+task.failed;
       const count=document.createElement("span"); count.textContent=`${task.completed}/${task.total}`+(task.failed?` · ${task.failed} 失败`:""); row.append(bar,count); card.append(row);
@@ -870,6 +915,60 @@ function bubble(role, text, imgs) {
   return b;
 }
 
+function showAgentWaiting(b) {
+  b.innerHTML = "";
+  const wait = document.createElement("span");
+  wait.className = "waiting";
+  wait.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="stage">Agent 正在理解请求并选择能力</span><span class="secs">0 秒</span>';
+  b.append(wait);
+  const started = Date.now();
+  const tick = setInterval(() => {
+    const elapsed = Math.round((Date.now() - started) / 1000);
+    const secs = wait.querySelector(".secs");
+    if (secs) secs.textContent = `${elapsed} 秒`;
+    if (!wait.isConnected) clearInterval(tick);
+  }, 500);
+  return () => { clearInterval(tick); wait.remove(); };
+}
+
+async function runAgentRequest(record, b, chatId) {
+  const stopWaiting = showAgentWaiting(b);
+  if (activeAgentRequests.has(record.requestId)) return;
+  activeAgentRequests.add(record.requestId);
+  busy = true; $("send").disabled = true;
+  const chat = chats.find(c => c.id === chatId);
+  const apiMessages = (chat?.messages || []).filter(m =>
+    m.status !== "planning" && !m.kind && !m.mode
+  ).map(m => ({role:m.role, content:m.content}));
+  const started = Date.now();
+  try {
+    const resp = await fetch("/mira/agent", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({messages: apiMessages, enable_thinking: thinking,
+                           request_id: record.requestId}),
+    });
+    if (!resp.ok) {
+      const failure = await resp.json();
+      throw new Error(failure.error || `HTTP ${resp.status}`);
+    }
+    const result = await resp.json();
+    record.content = result.content || "任务已处理。";
+    record.tasks = result.tasks || [];
+    record.status = "complete";
+    record.elapsed = ((Date.now() - started) / 1000).toFixed(1);
+  } catch (err) {
+    record.content = "⚠ " + err.message;
+    record.status = "failed";
+  } finally {
+    stopWaiting();
+    activeAgentRequests.delete(record.requestId);
+    saveChats(); renderChats();
+    busy = false; $("send").disabled = false;
+    if (curId === chatId) openChat(chatId);
+    $("input").focus();
+  }
+}
+
 async function sendMedia(mode, text) {
   if (busy || !text) return;
   busy = true; $("send").disabled = true;
@@ -907,49 +1006,15 @@ async function send() {
   const content = imgs.length
     ? [...imgs.map(u => ({type: "image_url", image_url: {url: u}})), {type: "text", text: text || "Describe this image."}]
     : text;
-  messages.push({role: "user", content});
+  const requestId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  messages.push({role: "user", content, requestId});
+  persistCurrent();
+  const chatId = curId;
+  const record = {role:"assistant", content:"", tasks:[], status:"planning", requestId};
+  messages.push(record);
   persistCurrent();
   const b = bubble("bot", "");
-  const apiMessages = messages.filter(m => !m.kind && !m.mode).map(m => ({role:m.role, content:m.content}));
-  const wait = document.createElement("span");
-  wait.className = "waiting";
-  wait.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="secs">0s</span>';
-  b.prepend(wait);
-  const t0 = Date.now();
-  const tick = setInterval(() => {
-    const el = wait.querySelector(".secs");
-    if (el) el.textContent = Math.round((Date.now() - t0) / 1000) + "s";
-  }, 250);
-  const stopWaiting = () => { clearInterval(tick); wait.remove(); };
-  try {
-    const resp = await fetch("/mira/agent", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({messages: apiMessages, enable_thinking: thinking}),
-    });
-    if (!resp.ok) {
-      const failure = await resp.json();
-      throw new Error(failure.error || `HTTP ${resp.status}`);
-    }
-    const result = await resp.json();
-    stopWaiting();
-    const record={role:"assistant",content:result.content || "任务已处理。",tasks:result.tasks || []};
-    b.append(document.createTextNode(record.content));
-    for(const taskId of record.tasks) renderTaskCard(b,taskId);
-    messages.push(record);
-    persistCurrent();
-    const meta = document.createElement("span");
-    meta.className = "meta";
-    meta.textContent = `Agent · ${((Date.now() - t0) / 1000).toFixed(1)}s`;
-    b.append(meta);
-  } catch (err) {
-    b.append(document.createTextNode("⚠ " + err.message));
-    messages.pop();
-    persistCurrent();
-  }
-  stopWaiting();
-  busy = false;
-  $("send").disabled = false;
-  $("input").focus();
+  await runAgentRequest(record, b, chatId);
 }
 $("send").onclick = send;
 $("input").addEventListener("keydown", e => {

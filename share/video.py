@@ -67,9 +67,21 @@ def hf_command(repo, files, token=""):
         command.extend(["--token", token])
     return command
 
+def download_env(files):
+    """Xet-backed files beyond the mirror's regular-download limit must come
+    straight from huggingface.co with the hf_xet backend enabled — the mirror's
+    plain-HTTPS path makes huggingface_hub refuse files this large."""
+    if sum(SOURCE_MODEL_FILES.get(f, 0) for f in files) < 5e9:
+        return None
+    env = dict(os.environ)
+    env.pop("HF_ENDPOINT", None)
+    env.pop("HF_HUB_DISABLE_XET", None)
+    return env
+
 def download_repo(repo, files, token, log):
     command = hf_command(repo, files, token)
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=log, text=True)
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=log, text=True,
+                            env=download_env(files))
     with lock: state["process"] = proc
     output, _ = proc.communicate()
     with lock: cancelled = state["cancel_requested"]

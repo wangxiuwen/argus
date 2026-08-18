@@ -644,7 +644,10 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function runMedia(mode, prompt, record, bubbleEl, resume=false) {
   const started = record.startedAt || Date.now();
-  record.startedAt = started;
+  // Persist the start immediately: the chat window reloads on every reopen, and
+  // during a long model download no later save used to land — a resume then
+  // restarted the elapsed timer from zero.
+  if (!record.startedAt) { record.startedAt = started; saveChats(); }
   const card = resume ? bubbleEl : document.createElement("div");
   card.className = "media-card";
   card.innerHTML = "";
@@ -655,21 +658,36 @@ async function runMedia(mode, prompt, record, bubbleEl, resume=false) {
   bar.removeAttribute("value"); label.textContent = "正在启动本地模型…"; progress.append(bar,label); card.append(title,progress);
   if (!resume) bubbleEl.append(card);
   try {
-    if (!resume) {
-      let payload;
-      if (mode === "image") payload = {prompt, size:$("imageSize").value, steps:4};
-      if (mode === "music") payload = {prompt, lyrics:$("lyrics").value.trim(), duration_seconds:+$("musicDuration").value};
-      if (mode === "video") {
-        const [width,height] = $("videoSize").value.split("x").map(Number);
-        payload = {prompt,width,height,frames:+$("videoFrames").value,steps:6,seed:6};
+    // A resume can land before the first generate was accepted (model still
+    // downloading, or the page reloaded mid-download), so both paths share the
+    // ensure-generate block. Without it a resumed loop saw running=false the
+    // moment the download process exited and adopted a stale output as its own.
+    if (!resume || !record.jobId) {
+      let payload = record.payload;
+      if (!payload) {
+        payload = {prompt};
+        // The picker controls these read from were removed from the composer
+        // long ago; fall back to the same defaults the job service uses.
+        if (mode === "image") Object.assign(payload, {size:$("imageSize")?.value || "1024x1024", steps:4});
+        if (mode === "music") Object.assign(payload, {lyrics:($("lyrics")?.value || "").trim(), duration_seconds:+($("musicDuration")?.value || 60)});
+        if (mode === "video") {
+          const [width,height] = ($("videoSize")?.value || "960x544").split("x").map(Number);
+          Object.assign(payload, {width,height,frames:+($("videoFrames")?.value || 121),steps:6,seed:6});
+        }
+        record.payload = payload;
       }
       try {
         const accepted = await mediaPost(mode, "generate", payload);
         record.jobId = accepted.job_id;
       } catch (e) {
-        if (!/not prepared|尚未准备/i.test(e.message)) throw e;
-        label.textContent = "首次使用，正在下载模型…";
-        await mediaPost(mode, "prepare", {accept_license:true});
+        // "busy" = a download or another generation already holds the worker;
+        // either way we wait for model_ready && !running and post generate again
+        if (!/not prepared|尚未准备|busy|忙/i.test(e.message)) throw e;
+        label.textContent = resume ? "后台模型尚未就绪，正在等待下载…" : "首次使用，正在下载模型…";
+        if (!resume) {
+          try { await mediaPost(mode, "prepare", {accept_license:true}); }
+          catch (pe) { if (!/busy|忙/i.test(pe.message)) throw pe; }
+        }
         for (;;) {
           const s = await mediaJson(`/mira/${mode}/status`);
           if (s.error) throw Error(s.error);
@@ -689,7 +707,10 @@ async function runMedia(mode, prompt, record, bubbleEl, resume=false) {
       if (record.jobId && s.job_id && record.jobId !== s.job_id) throw Error("该生成任务已被另一项任务替换");
       if (!record.jobId && s.job_id) { record.jobId = s.job_id; saveChats(); }
       if (s.progress?.total) { bar.max=s.progress.total; bar.value=s.progress.step; }
-      label.textContent = `${s.stage === "generating" ? "正在生成" : "正在处理"}… ${Math.round((Date.now()-started)/1000)} 秒`;
+      else if (s.download?.percent != null && !s.model_ready) { bar.max=100; bar.value=s.download.percent; }
+      label.textContent = (s.download?.percent != null && !s.model_ready)
+        ? `下载模型 ${s.download.percent}%`
+        : `${s.stage === "generating" ? "正在生成" : "正在处理"}… ${Math.round((Date.now()-started)/1000)} 秒`;
       if (!s.running) {
         let output = s.output;
         if (!output || (mode === "video" && output.startsWith("/") && !output.startsWith("/outputs/"))) {
@@ -1021,13 +1042,13 @@ function bubble(role, text, imgs) {
   return b;
 }
 
-function showAgentWaiting(b) {
+function showAgentWaiting(b, startedAt) {
   b.innerHTML = "";
   const wait = document.createElement("span");
   wait.className = "waiting";
   wait.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="stage">Agent 正在理解请求并选择能力</span><span class="secs">0 秒</span>';
   b.append(wait);
-  const started = Date.now();
+  const started = startedAt || Date.now();
   const tick = setInterval(() => {
     const elapsed = Math.round((Date.now() - started) / 1000);
     const secs = wait.querySelector(".secs");
@@ -1038,15 +1059,22 @@ function showAgentWaiting(b) {
 }
 
 async function runAgentRequest(record, b, chatId) {
-  const stopWaiting = showAgentWaiting(b);
-  if (activeAgentRequests.has(record.requestId)) return;
+  if (!record.startedAt) { record.startedAt = Date.now(); saveChats(); }
+  if (activeAgentRequests.has(record.requestId)) {
+    // Reopened mid-flight: the guard blocks a duplicate request, but the live
+    // waiting state must still show — anchored to the original start, or the
+    // elapsed readout restarts from zero on every chat switch.
+    showAgentWaiting(b, record.startedAt);
+    return;
+  }
   activeAgentRequests.add(record.requestId);
+  const stopWaiting = showAgentWaiting(b, record.startedAt);
   busy = true; $("send").disabled = true;
   const chat = chats.find(c => c.id === chatId);
   const apiMessages = (chat?.messages || []).filter(m =>
     m.status !== "planning" && !m.kind && !m.mode
   ).map(m => ({role:m.role, content:m.content}));
-  const started = Date.now();
+  const started = record.startedAt;
   try {
     const resp = await fetch("/mira/agent", {
       method: "POST", headers: {"Content-Type": "application/json"},

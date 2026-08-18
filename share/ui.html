@@ -32,7 +32,7 @@
   }
   #side.hidden { display: none; }
   #sideTop { height: 40px; display: flex; align-items: center; gap: 9px; padding: 0 8px; margin-bottom: 5px; }
-  .brand-parrot { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: #f1ecff; box-shadow: inset 0 0 0 1px #6d5bea20, 0 4px 12px #6d5bea25; }
+  .brand-parrot { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; color: #6d28d9; background: #fff; box-shadow: inset 0 0 0 1px #e8e8eb; }
   .brand-parrot svg { width: 19px; height: 19px; }
   .brand-name { font-weight: 650; letter-spacing: -.01em; }
   #sideTop .icon-btn { margin-left: auto; }
@@ -124,7 +124,7 @@
   .shortcut { color: var(--muted); font-size: 11px; white-space: nowrap; }
   #log.empty { display: flex; align-items: center; justify-content: center; }
   #hero { width: min(560px,100%); text-align: center; color: var(--muted); padding-bottom: 90px; }
-  #hero .hero-parrot { width: 50px; height: 50px; border-radius: 16px; margin: 0 auto 17px; display: grid; place-items: center; background: #f1ecff; box-shadow: 0 10px 26px #6d5bea28; }
+  #hero .hero-parrot { width: 50px; height: 50px; border-radius: 14px; margin: 0 auto 17px; display: grid; place-items: center; color: #6d28d9; background: #fff; box-shadow: inset 0 0 0 1px #e8e8eb; }
   #hero .hero-parrot svg { width: 38px; height: 38px; }
   #hero h1 { color: var(--text); font-size: 24px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -.025em; }
   #hero .t { font-size: 13px; }
@@ -261,7 +261,7 @@
 <body>
 <nav id="side">
   <div id="sideTop">
-    <span class="brand-parrot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 7a5 5 0 0 1 10 0v6.5a6.5 6.5 0 0 1-13 0V9.5Z" fill="#55b9ee" stroke="#6d28d9" stroke-width="1.7" stroke-linejoin="round"/><path d="m17.5 6 4 2-4 2Z" fill="#fb7185" stroke="#6d28d9" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 12c3-2 6 0 6 3.5-2.8 1-5.2-.2-6-3.5Z" fill="#a78bfa" stroke="#6d28d9" stroke-width="1.4"/><circle cx="14.5" cy="6" r=".7" fill="#4c1d95"/><path d="M9 20v2m5-2v2M7.5 22h3M12.5 22h3" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+    <span class="brand-parrot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 7a5 5 0 0 1 10 0v6.5a6.5 6.5 0 0 1-13 0V9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m17.5 6 4 2-4 2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 12c3-2 6 0 6 3.5-2.8 1-5.2-.2-6-3.5Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="14.5" cy="6" r=".7" fill="currentColor"/><path d="M9 20v2m5-2v2M7.5 22h3M12.5 22h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
     <span class="brand-name">Mira</span>
     <button class="icon-btn" id="toggleIn" title="Collapse sidebar">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
@@ -301,7 +301,7 @@
     <span id="status"><span id="statusText">connecting…</span><span id="dot"></span></span>
   </div>
   <div id="log" class="empty">
-    <div id="hero"><span class="hero-parrot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 7a5 5 0 0 1 10 0v6.5a6.5 6.5 0 0 1-13 0V9.5Z" fill="#55b9ee" stroke="#6d28d9" stroke-width="1.7" stroke-linejoin="round"/><path d="m17.5 6 4 2-4 2Z" fill="#fb7185" stroke="#6d28d9" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 12c3-2 6 0 6 3.5-2.8 1-5.2-.2-6-3.5Z" fill="#a78bfa" stroke="#6d28d9" stroke-width="1.4"/><circle cx="14.5" cy="6" r=".7" fill="#4c1d95"/><path d="M9 20v2m5-2v2M7.5 22h3M12.5 22h3" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round"/></svg></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,'image')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,'music')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,'video')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>
+    <div id="hero"><span class="hero-parrot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 7a5 5 0 0 1 10 0v6.5a6.5 6.5 0 0 1-13 0V9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m17.5 6 4 2-4 2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 12c3-2 6 0 6 3.5-2.8 1-5.2-.2-6-3.5Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="14.5" cy="6" r=".7" fill="currentColor"/><path d="M9 20v2m5-2v2M7.5 22h3M12.5 22h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,'image')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,'music')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,'video')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>
   </div>
   <div id="launch">
     <div class="wrap">
@@ -347,7 +347,7 @@ let lastTps = 0;  // tokens/s reported by the server for the request in flight
 let ready = false, lastHealth = {};
 
 /* ---------- sidebar + chat history ---------- */
-const HERO = '<div id="hero"><span class="hero-parrot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 7a5 5 0 0 1 10 0v6.5a6.5 6.5 0 0 1-13 0V9.5Z" fill="#55b9ee" stroke="#6d28d9" stroke-width="1.7" stroke-linejoin="round"/><path d="m17.5 6 4 2-4 2Z" fill="#fb7185" stroke="#6d28d9" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 12c3-2 6 0 6 3.5-2.8 1-5.2-.2-6-3.5Z" fill="#a78bfa" stroke="#6d28d9" stroke-width="1.4"/><circle cx="14.5" cy="6" r=".7" fill="#4c1d95"/><path d="M9 20v2m5-2v2M7.5 22h3M12.5 22h3" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round"/></svg></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,\'image\')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,\'music\')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,\'video\')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>';
+const HERO = '<div id="hero"><span class="hero-parrot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 7a5 5 0 0 1 10 0v6.5a6.5 6.5 0 0 1-13 0V9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m17.5 6 4 2-4 2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 12c3-2 6 0 6 3.5-2.8 1-5.2-.2-6-3.5Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="14.5" cy="6" r=".7" fill="currentColor"/><path d="M9 20v2m5-2v2M7.5 22h3M12.5 22h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,\'image\')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,\'music\')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,\'video\')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>';
 function useSuggestion(button) {
   const input = $("input"); input.value = button.textContent; input.focus();
   input.dispatchEvent(new Event("input"));

@@ -6,9 +6,9 @@ create images, compose music, or render videos without switching to a separate a
 
 Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`) that understands both **text and images**, running entirely on your machine. No cloud, no telemetry, no Electron.
 
-Mira appears in both the Dock and menu bar. The Dock uses its full-color parrot
-mascot; the menu bar uses a native monochrome bird that changes color with the
-server state. Closing the chat window hides Mira from the Dock while keeping the
+Mira appears in both the Dock and menu bar. The Dock uses a single-color parrot
+mark on a plain white background; the menu bar uses a native monochrome bird that changes
+color with the server state. Closing the chat window hides Mira from the Dock while keeping the
 menu bar app and services alive; minimizing the window keeps its Dock icon.
 
 ## Features

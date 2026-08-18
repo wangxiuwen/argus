@@ -70,6 +70,15 @@ class HtmlTests(unittest.TestCase):
         self.assertIn("hubSearchCache", page)
         self.assertIn("overscroll-behavior: contain", page)
 
+    def test_composer_shrinks_without_horizontal_page_overflow(self):
+        page = (ROOT / "share" / "ui.html").read_text()
+        self.assertIn("overflow: hidden", page)
+        self.assertIn("#picker { position: relative; margin-left: auto; min-width: 0", page)
+        self.assertIn("flex: 1 1 100px", page)
+        self.assertIn("#composer { padding: 12px 22px 18px", page)
+        self.assertIn("overflow: hidden", page)
+        self.assertNotIn('<span class="agent-mode">', page)
+
 
 if __name__ == "__main__":
     unittest.main()

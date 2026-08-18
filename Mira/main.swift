@@ -30,7 +30,7 @@ struct Config {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelegate, WKScriptMessageHandler {
     var statusItem: NSStatusItem!
     var timer: Timer?
     var config = Config.load()
@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         return "http://\(clientHost):\(config.port)"
     }
 
-    func setTray(symbol: String = "eye", color: NSColor = .secondaryLabelColor,
+    func setTray(symbol: String = "bird.fill", color: NSColor = .secondaryLabelColor,
                  tooltip: String = "Mira") {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         let menu = NSMenu()
         menu.autoenablesItems = false
         let openItem = NSMenuItem(title: "Open Mira", action: #selector(openChat), keyEquivalent: "o")
-        openItem.image = NSImage(systemSymbolName: "eye", accessibilityDescription: nil)
+        openItem.image = NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)
         openItem.target = self
         let menuSize = NSFont.menuFont(ofSize: 0).pointSize
         openItem.attributedTitle = NSAttributedString(
@@ -165,6 +165,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
     var chatWebView: WKWebView?
 
     @objc func openChat() {
+        // Closing the last chat window hides Mira from the Dock while the tray
+        // and services keep running. Restore the Dock identity when reopened.
+        NSApp.setActivationPolicy(.regular)
         runCtl("ui", "start")
         if chatWindow == nil {
             let web = WKWebView(frame: .zero)
@@ -173,10 +176,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
                 contentRect: NSRect(x: 0, y: 0, width: 920, height: 720),
                 styleMask: [.titled, .closable, .resizable, .miniaturizable],
                 backing: .buffered, defer: false)
+            win.delegate = self
             win.title = "Mira"
             win.minSize = NSSize(width: 480, height: 400)
             win.center()
             win.contentView = web
+            // Retain the window after Close. Besides preserving chat state, this
+            // avoids releasing an NSWindow while AppKit's close animation is
+            // still using it during the Dock-policy transition below.
             win.isReleasedWhenClosed = false
             chatWindow = win
             chatWebView = web
@@ -190,6 +197,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         }
         NSApp.activate(ignoringOtherApps: true)
         chatWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === chatWindow else { return }
+        // This is deliberately tied to Close, not miniaturize: a minimized
+        // window remains represented in the Dock. Wait for AppKit's close
+        // transform animation before changing activation policy.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     func webView(_ webView: WKWebView,
@@ -387,7 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
                     self.setTray(color: .systemOrange, tooltip: "Mira · loading model")
                     self.statusLine.title = "Status: busy or loading model…"
                 } else {
-                    self.setTray(symbol: "eye.slash", tooltip: "Mira · not running")
+                    self.setTray(symbol: "bird", tooltip: "Mira · not running")
                     self.statusLine.title = "Status: not running"
                 }
                 self.startItem.isEnabled = !(ready || alive)

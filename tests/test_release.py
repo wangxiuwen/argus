@@ -32,6 +32,29 @@ class ReleaseMetadataTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text()
         self.assertIn("Contents/Resources/Mira.icns", makefile)
 
+    def test_branding_uses_parrot_instead_of_eye_motifs(self):
+        swift = (ROOT / "Mira" / "main.swift").read_text()
+        page = (ROOT / "share" / "ui.html").read_text()
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn('symbol: String = "bird.fill"', swift)
+        self.assertNotIn('systemSymbolName: "eye', swift)
+        self.assertIn("hero-parrot", page)
+        self.assertIn('<svg viewBox="0 0 24 24">', page)
+        self.assertNotIn("🦜", page)
+        self.assertNotIn("hero-eye", page)
+        self.assertNotIn("brand-eye", page)
+        self.assertIn("parrot", readme.lower())
+
+    def test_close_hides_dock_but_minimize_keeps_it(self):
+        swift = (ROOT / "Mira" / "main.swift").read_text()
+        self.assertIn("NSWindowDelegate", swift)
+        self.assertIn("win.delegate = self", swift)
+        self.assertIn("func windowWillClose", swift)
+        self.assertIn("setActivationPolicy(.accessory)", swift)
+        self.assertIn("func openChat", swift)
+        self.assertIn("setActivationPolicy(.regular)", swift)
+        self.assertNotIn("windowDidMiniaturize", swift)
+
     def test_release_notes_heredoc_stays_inside_yaml_run_block(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         notes = workflow.split("--notes \"$(cat <<'EOF'\n", 1)[1].split("\n          EOF", 1)[0]

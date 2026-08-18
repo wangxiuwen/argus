@@ -46,7 +46,7 @@ class MediaModelReadinessTests(unittest.TestCase):
 class UnifiedConversationTests(unittest.TestCase):
     def test_agent_chooses_media_tools_from_one_chat_composer(self):
         html = (ROOT / "share" / "ui.html").read_text()
-        self.assertIn("Agent · 自动选择能力", html)
+        self.assertIn("Agent 正在理解请求并选择能力", html)
         self.assertNotIn('id="modeSelect"', html)
         self.assertNotIn('id="videoView"', html)
         self.assertNotIn('id="musicView"', html)

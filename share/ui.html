@@ -218,7 +218,7 @@
     width: 100%; border: none; border-bottom: 1px solid var(--border); background: none;
     color: var(--text); font: inherit; font-size: 13px; padding: 5px 6px 8px; outline: none; margin-bottom: 6px;
   }
-  #list { max-height: 240px; overflow-y: auto; }
+  #list { max-height: 240px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
   .opt {
     display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px;
     cursor: pointer; font-size: 13px;
@@ -829,9 +829,19 @@ function sectionLabel(text) {
 }
 
 let searchTimer = null;
+let searchGeneration = 0;
+const hubSearchCache = new Map();
 
-function renderList(filter = "") {
+function appendHubResults(list, results) {
+  if (!results.length) return;
+  list.append(sectionLabel("on Hugging Face"));
+  const known = new Set(variants.map(v => v.id));
+  for (const v of results.filter(r => !known.has(r.id)).slice(0, 12)) list.append(optionRow(v));
+}
+
+function renderList(filter = "", preserveScroll = false) {
   const list = $("list");
+  const previousTop = preserveScroll ? list.scrollTop : 0;
   list.innerHTML = "";
   const f = filter.trim().toLowerCase();
   const local = variants.filter(v => v.label.toLowerCase().includes(f) || v.id.toLowerCase().includes(f));
@@ -840,7 +850,14 @@ function renderList(filter = "") {
 
   // any model mlx-vlm can load works — search Hugging Face for MLX conversions
   clearTimeout(searchTimer);
+  const generation = ++searchGeneration;
   if (f.length >= 2) {
+    const cached = hubSearchCache.get(f);
+    if (cached) {
+      appendHubResults(list, cached);
+      if (preserveScroll) list.scrollTop = previousTop;
+      return;
+    }
     searchTimer = setTimeout(async () => {
       const pending = sectionLabel("searching Hugging Face…");
       list.append(pending);
@@ -848,13 +865,14 @@ function renderList(filter = "") {
       try {
         results = (await fetch(`/argus/search?q=${encodeURIComponent(f)}`).then(r => r.json())).results;
       } catch { /* offline: local list still works */ }
+      if (generation !== searchGeneration || $("find").value.trim().toLowerCase() !== f) return;
+      hubSearchCache.set(f, results);
       pending.remove();
-      if (!results.length) return;
-      list.append(sectionLabel("on Hugging Face"));
-      const known = new Set(variants.map(v => v.id));
-      for (const v of results.filter(r => !known.has(r.id)).slice(0, 12)) list.append(optionRow(v));
+      appendHubResults(list, results);
+      if (preserveScroll) list.scrollTop = previousTop;
     }, 350);
   }
+  if (preserveScroll) list.scrollTop = previousTop;
 }
 
 function setPickerLabel() {
@@ -874,11 +892,14 @@ $("menu").onclick = e => e.stopPropagation();
 
 async function loadModels() {
   const info = await fetch("/argus/models").then(r => r.json());
+  const catalogChanged = JSON.stringify(info.variants) !== JSON.stringify(variants);
   variants = info.variants;
   if (!model) model = info.current;
   setPickerLabel();
   // keep an already-open menu in sync (it can be opened before this first load lands)
-  if ($("menu").classList.contains("open")) renderList($("find").value);
+  if ($("menu").classList.contains("open") && catalogChanged) {
+    renderList($("find").value, true);
+  }
 }
 
 async function switchModel(target) {

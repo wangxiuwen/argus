@@ -62,6 +62,14 @@ class HtmlTests(unittest.TestCase):
         self.assertNotIn("prompt(", page)
         self.assertNotIn("confirm(", page)
 
+    def test_model_picker_preserves_scroll_and_rejects_stale_searches(self):
+        page = (ROOT / "share" / "ui.html").read_text()
+        self.assertIn("catalogChanged", page)
+        self.assertIn("renderList($(\"find\").value, true)", page)
+        self.assertIn("generation !== searchGeneration", page)
+        self.assertIn("hubSearchCache", page)
+        self.assertIn("overscroll-behavior: contain", page)
+
 
 if __name__ == "__main__":
     unittest.main()

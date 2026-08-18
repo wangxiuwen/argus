@@ -72,9 +72,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Edit menu so ⌘C/⌘V/⌘A work inside the chat window (accessory apps have no default menu)
+        // A regular Dock app needs an application menu as well as editing shortcuts.
         let mainMenu = NSMenu()
-        mainMenu.addItem(NSMenuItem())
+        let appHolder = NSMenuItem()
+        let appMenu = NSMenu(title: "Mira")
+        appMenu.addItem(withTitle: "About Mira", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(withTitle: "Quit Mira", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appHolder.submenu = appMenu
+        mainMenu.addItem(appHolder)
         let editHolder = NSMenuItem()
         let edit = NSMenu(title: "Edit")
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
@@ -140,6 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         timer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
             self?.refresh()
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { openChat() }
+        return true
     }
 
     func runCtl(_ args: String...) {
@@ -389,5 +401,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(.regular)
 app.run()

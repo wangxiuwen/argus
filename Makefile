@@ -1,5 +1,5 @@
 APP     = Mira
-VERSION = 0.4.2
+VERSION = 0.4.3
 OUT     = .build/$(APP)
 BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin
@@ -9,6 +9,7 @@ SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html \
 	share/launch.py share/bridge.py share/prune.py share/video.py share/music.py \
 	share/image.py share/jobs.py share/iteration.py
 VIDEO_PIPELINES = share/video-pipelines/*.vpipeline
+ICON = assets/Mira.icns
 VPIPE_DMG = .cache/VpipeManager-0.1.26-with-ffmpeg.dmg
 VPIPE_SHA256 = 25abea40b3bde34670295939771f288832f5b5358374140fce0c20bdc177b276
 MLX_SERVE_ARCHIVE = .cache/mlx-serve-bin-macos-arm64-26.8.8.tar.gz
@@ -46,6 +47,7 @@ install: build verify-vpipe verify-mlx-serve
 	cp $(OUT) $(BUNDLE)/Contents/MacOS/
 	cp Info.plist $(BUNDLE)/Contents/
 	cp $(VIDEO_PIPELINES) $(BUNDLE)/Contents/Resources/video-pipelines/
+	cp $(ICON) $(BUNDLE)/Contents/Resources/Mira.icns
 	./scripts/embed-vpipe.sh $(VPIPE_DMG) $(BUNDLE)
 	./scripts/embed-mlx-serve.sh $(MLX_SERVE_ARCHIVE) $(BUNDLE)
 	plutil -replace CFBundleShortVersionString -string $(VERSION) $(BUNDLE)/Contents/Info.plist
@@ -72,6 +74,7 @@ dist: build verify-vpipe verify-mlx-serve
 	cp $(OUT) $(STAGE)/$(APP).app/Contents/MacOS/
 	cp Info.plist $(STAGE)/$(APP).app/Contents/
 	cp $(VIDEO_PIPELINES) $(STAGE)/$(APP).app/Contents/Resources/video-pipelines/
+	cp $(ICON) $(STAGE)/$(APP).app/Contents/Resources/Mira.icns
 	./scripts/embed-vpipe.sh $(VPIPE_DMG) $(STAGE)/$(APP).app
 	./scripts/embed-mlx-serve.sh $(MLX_SERVE_ARCHIVE) $(STAGE)/$(APP).app
 	plutil -replace CFBundleShortVersionString -string $(VERSION) $(STAGE)/$(APP).app/Contents/Info.plist

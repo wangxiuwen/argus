@@ -36,6 +36,7 @@ jobs:
           set -e
           tar -tzf dist/*.tar.gz > files.txt
           for want in ./Mira.app/Contents/Info.plist ./Mira.app/Contents/MacOS/Mira \
+                      ./Mira.app/Contents/Resources/Mira.icns \
                       ./Mira.app/Contents/Helpers/vpipe \
                       ./Mira.app/Contents/Helpers/mlx-serve/mlx-serve \
                       ./bin/argus ./share/chat.py ./share/ui.py ./share/ui.html \

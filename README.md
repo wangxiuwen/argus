@@ -6,8 +6,9 @@ create images, compose music, or render videos without switching to a separate a
 
 Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`) that understands both **text and images**, running entirely on your machine. No cloud, no telemetry, no Electron.
 
-The menu bar uses a native eye icon: green when ready, orange while working, and
-an eye-slash when stopped.
+Mira appears in both the Dock and menu bar. The Dock uses its full-color eye
+icon; the menu bar uses a native monochrome eye: green when ready, orange while
+working, and an eye-slash when stopped.
 
 ## Features
 

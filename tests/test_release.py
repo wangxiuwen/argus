@@ -26,7 +26,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertNotIn("LSUIElement", info)
         self.assertEqual(info["CFBundleIconFile"], "Mira")
         self.assertTrue((ROOT / "assets" / "Mira.icns").is_file())
-        self.assertTrue((ROOT / "assets" / "MiraMark.svg").is_file())
+        self.assertTrue((ROOT / "share" / "MiraIcon.png").is_file())
         swift = (ROOT / "Mira" / "main.swift").read_text()
         self.assertIn("setActivationPolicy(.regular)", swift)
         self.assertIn("applicationShouldHandleReopen", swift)
@@ -40,7 +40,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn('symbol: String = "bird.fill"', swift)
         self.assertNotIn('systemSymbolName: "eye', swift)
         self.assertIn("hero-parrot", page)
-        self.assertIn('<svg viewBox="0 0 24 24">', page)
+        self.assertIn('<img src="/mira/icon.png" alt="">', page)
         self.assertNotIn("🦜", page)
         self.assertNotIn("#f1ecff", page)
         self.assertNotIn("#55b9ee", page)
@@ -49,6 +49,10 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertNotIn("hero-eye", page)
         self.assertNotIn("brand-eye", page)
         self.assertIn("parrot", readme.lower())
+
+        backend = (ROOT / "share" / "ui.py").read_text()
+        self.assertIn('route == "/mira/icon.png"', backend)
+        self.assertIn('self._serve_png("MiraIcon.png")', backend)
 
     def test_close_hides_dock_but_minimize_keeps_it(self):
         swift = (ROOT / "Mira" / "main.swift").read_text()

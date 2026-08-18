@@ -1,11 +1,11 @@
 APP     = Mira
-VERSION = 0.4.5
+VERSION = 0.4.6
 OUT     = .build/$(APP)
 BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin
 STAGE   = .build/stage
 DIST    = dist/mira-$(VERSION)-macos-arm64.tar.gz
-SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html \
+SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html share/MiraIcon.png \
 	share/launch.py share/bridge.py share/prune.py share/video.py share/music.py \
 	share/image.py share/jobs.py share/iteration.py
 VIDEO_PIPELINES = share/video-pipelines/*.vpipeline

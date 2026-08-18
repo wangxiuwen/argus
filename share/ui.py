@@ -569,6 +569,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _serve_png(self, name):
+        with open(os.path.join(HERE, name), "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _proxy(self, data=None):
         req = urllib.request.Request(API + self.path, data=data)
         if data is not None:
@@ -720,6 +730,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         route = urllib.parse.urlparse(self.path).path
         if route in ("/", "/index.html"):
             self._serve_html()
+        elif route == "/mira/icon.png":
+            self._serve_png("MiraIcon.png")
         elif self.path == "/settings":
             self._serve_html("settings.html")
         elif self.path == "/argus/config":

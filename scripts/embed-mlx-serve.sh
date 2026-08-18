@@ -14,4 +14,7 @@ rm -rf "$target"
 mkdir -p "$(dirname "$target")"
 cp -R "$source_dir" "$target"
 chmod 755 "$target/mlx-serve"
-"$target/mlx-serve" --version >/dev/null
+# GitHub's macOS runner can be older than the binary's deployment target.
+# Validate the artifact without launching it; release verification on a
+# supported Mac exercises the executable itself.
+file "$target/mlx-serve" | grep -Eq 'Mach-O .*arm64'

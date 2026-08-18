@@ -249,9 +249,6 @@
       </svg>
     </button>
   </div>
-  <button class="side-btn" id="chatBtn">
-    <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5h12v8.7H9l-3.7 2.5.8-2.5H4z"/></svg></span>对话
-  </button>
   <button class="side-btn" id="newChat">
     <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
       stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16h9A1.5 1.5 0 0 0 16 14.5V10"/><path d="M13.4 3.6a1.4 1.4 0 0 1 2 2L10.6 10.4l-2.6.6.6-2.6z"/></svg></span>新对话
@@ -302,7 +299,7 @@
           <select id="imageSize" class="gen-option"><option value="1024x1024">1024×1024</option><option value="1344x768">1344×768</option><option value="768x1344">768×1344</option></select>
           <select id="videoSize" class="gen-option"><option value="960x544">960×544</option><option value="512x288">512×288</option></select>
           <select id="videoFrames" class="gen-option"><option value="120">5 秒</option><option value="22">1 秒</option></select>
-          <select id="musicDuration" class="gen-option"><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">120 秒</option></select>
+          <select id="musicDuration" class="gen-option"><option value="30">30 秒</option><option value="60">1 分钟</option><option value="120">2 分钟</option><option value="180">3 分钟</option><option value="240">4 分钟</option><option value="360">6 分钟</option></select>
           <span id="modeHint" class="shortcut"></span>
         </div>
         <button id="think" title="Let the model think before answering">
@@ -468,7 +465,6 @@ function openChat(id) {
   }
   renderChats();
 }
-$("chatBtn").onclick = showChat;
 $("newChat").onclick = () => { showChat(); newChat(); };
 loadChats();
 renderChats();

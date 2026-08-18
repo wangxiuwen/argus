@@ -1,5 +1,5 @@
 APP     = Mira
-VERSION = 0.2.2
+VERSION = 0.2.3
 OUT     = .build/$(APP)
 BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin

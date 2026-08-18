@@ -52,6 +52,9 @@ class UnifiedConversationTests(unittest.TestCase):
         self.assertNotIn('id="musicView"', html)
         self.assertIn("messages.push(user, record)", html)
         self.assertIn("renderMedia(card, m)", html)
+        self.assertNotIn('id="chatBtn"', html)
+        self.assertEqual(html.count('id="newChat"'), 1)
+        self.assertIn('<option value="360">6 分钟</option>', html)
 
     def test_composer_uses_newline_enter_and_modified_enter_to_send(self):
         html = (ROOT / "share" / "ui.html").read_text()

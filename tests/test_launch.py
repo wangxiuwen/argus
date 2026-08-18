@@ -20,17 +20,17 @@ class CommandArgsTests(unittest.TestCase):
             "mlx-community/Qwen3.8-27B-4bit", "http://127.0.0.1:8092/v1", [])
         self.assertEqual(args[-2:], [
             "--model", "mlx-community/Qwen3.8-27B-4bit"])
-        self.assertIn('model_provider="argus"', args)
-        self.assertIn('model_providers.argus.wire_api="responses"', args)
+        self.assertIn('model_provider="mira"', args)
+        self.assertIn('model_providers.mira.wire_api="responses"', args)
         self.assertIn(
-            'model_providers.argus.base_url="http://127.0.0.1:8092/v1"', args)
+            'model_providers.mira.base_url="http://127.0.0.1:8092/v1"', args)
 
     def test_codex_preserves_explicit_model_override(self):
         args = launch.command_args(
             "codex", "/bin/codex", launch.TOOLS["codex"],
             "local/model", "http://127.0.0.1:8092/v1", ["-m", "custom/model"])
         self.assertEqual(args[-2:], ["-m", "custom/model"])
-        self.assertIn('model_provider="argus"', args)
+        self.assertIn('model_provider="mira"', args)
 
     def test_server_model_uses_health_not_downloaded_model_list_order(self):
         context = mock.MagicMock()
@@ -76,8 +76,8 @@ class CommandArgsTests(unittest.TestCase):
     def test_opencode_provider_is_local_and_uses_a_stable_alias(self):
         config = launch.opencode_config(
             "org/model", "http://127.0.0.1:8092/v1", context_limit=65536)
-        self.assertEqual(config["model"], "argus/local")
-        provider = config["provider"]["argus"]
+        self.assertEqual(config["model"], "mira/local")
+        provider = config["provider"]["mira"]
         self.assertEqual(provider["options"]["baseURL"], "http://127.0.0.1:8092/v1")
         self.assertEqual(provider["models"]["local"]["name"], "org/model")
         self.assertEqual(provider["models"]["local"]["limit"]["context"], 65536)
@@ -100,11 +100,11 @@ class CommandArgsTests(unittest.TestCase):
                 launch.main(["opencode", "run", "hello"])
 
         config = json.loads(captured["env"]["OPENCODE_CONFIG_CONTENT"])
-        self.assertEqual(config["model"], "argus/local")
-        self.assertEqual(config["provider"]["argus"]["models"]["local"]["limit"]["context"],
+        self.assertEqual(config["model"], "mira/local")
+        self.assertEqual(config["provider"]["mira"]["models"]["local"]["limit"]["context"],
                          65536)
         self.assertEqual(
-            config["provider"]["argus"]["options"]["baseURL"],
+            config["provider"]["mira"]["options"]["baseURL"],
             "http://127.0.0.1:8092/v1")
         self.assertEqual(captured["env"]["OPENCODE_AUTH_CONTENT"], "{}")
         self.assertTrue(captured["env"]["XDG_CONFIG_HOME"].endswith("/argus/opencode/config"))
@@ -131,7 +131,7 @@ class CommandArgsTests(unittest.TestCase):
                 launch.main(["opencode", "run", "hello"])
 
         config = json.loads(captured["env"]["OPENCODE_CONFIG_CONTENT"])
-        self.assertEqual(config["model"], "argus/local")
+        self.assertEqual(config["model"], "mira/local")
         self.assertNotIn("XDG_CONFIG_HOME", captured["env"])
         self.assertNotIn("--pure", captured["args"])
 

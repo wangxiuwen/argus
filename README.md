@@ -1,49 +1,55 @@
-# Argus 👁️
+# Mira
 
-> In Greek myth, Argus Panoptes was the hundred-eyed giant who never stopped watching.
-> This Argus gives your Mac eyes — a local vision-language model, one click away in the menu bar.
-
-Argus is a tiny macOS menu bar app + CLI that runs a **local vision-language model server** on Apple Silicon, powered by [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) and Apple's MLX framework (`mlx.fast` Metal kernels — not llama.cpp).
+Mira is a native macOS workspace for local chat, coding agents and local media
+generation on Apple Silicon. One continuous conversation can answer questions,
+create images, compose music, or render videos without switching to a separate app.
 
 Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`) that understands both **text and images**, running entirely on your machine. No cloud, no telemetry, no Electron.
 
-```
-🟢A   ready        🟡A   loading        ⚪️A   stopped
-```
+The menu bar uses a native eye icon: green when ready, orange while working, and
+an eye-slash when stopped.
 
 ## Features
 
-- **Desktop chat app** — **Open Argus** in the menu bar opens a native window (AppKit + WebKit) with a sidebar of past chats, images by ＋ / drag & drop / ⌘V, streaming replies and collapsible thinking. While the model works you get pulsing dots and an elapsed-seconds counter, and the send button turns into Stop. No Electron: the whole app is one Swift file.
+- **One conversation, every modality** — select Chat, Image, Music, or Video beside the composer. Prompts, progress, failures and finished media remain together in the same persistent conversation history.
+- **Local image generation** — FLUX.2-klein 4B 4-bit creates PNG images locally. Its approximately 5 GB weights download only when first used.
+- **Local music generation** — MiniMax Music 3 8-bit turns a style prompt and sectioned lyrics into playable WAV files. Its approximately 13 GB weights download only when first used.
+- **Local video generation** — MiniMax H3 produces video with synchronized stereo audio. Mira handles the source download, visible progress, 4-bit conversion and inline playback.
+- **Desktop chat app** — **Open Mira** in the menu bar opens a native window (AppKit + WebKit) with past conversations, images by ＋ / drag & drop / ⌘V, streaming replies and collapsible thinking. Enter inserts a line break; ⌘↵ or Ctrl+Enter sends. No Electron.
 - **Thinking on demand** — a Think chip next to the model picker turns reasoning on or off per request, no restart involved. Reasoning streams into a collapsible block.
 - **Speed readout** — live tokens/s while generating, then a footer with tok/s, time to first token and total time. On an M2 Max, Qwen3.8-27B in bf16 runs around 6 tok/s; the 4bit variant is several times faster.
 - **Launch page** — copyable commands that point curl, the OpenAI Python/Node SDKs, Codex, aider or any OpenAI-compatible app at your local server, with the current model name filled in.
 - **Settings window** — model, launch at login, expose-to-network, ports, reply length limit, model location with size, and extra server flags; Save or Save & Restart.
 - **Menu bar control** — start / stop / restart the server, live status icon, switch model, copy API URL, open log.
-- **Model switching** — pick bf16 / 8bit / 4bit from the tray submenu or the picker next to the message box; Argus rewrites the config, restarts the server, and downloads the weights if you don't have them yet. Already-downloaded variants are marked ✓.
-- **CLI** — `argus ask "what's this?" photo.png` for one-shot questions, `argus chat` for an interactive session (drop image paths straight into your message), `argus ui` for the chat page in a browser, plus `start|stop|restart|status|log|use|download|model|config`.
+- **Model switching** — pick bf16 / 8bit / 4bit from the tray submenu or the picker next to the message box; Mira rewrites the config, restarts the server, and downloads the weights if you don't have them yet. Already-downloaded variants are marked ✓.
+- **CLI** — `mira ask "what's this?" photo.png` for one-shot questions, `mira chat` for an interactive session (drop image paths straight into your message), `mira ui` for the chat page in a browser, plus `start|stop|restart|status|log|use|download|model|config`.
 - **Auto-download** — no model on disk? The first start pulls it from Hugging Face automatically (default: `mlx-community/Qwen3.8-27B-bf16`, ~54 GB bf16; pick a 4bit/8bit variant if you have less RAM).
-- **Resilient downloads** — Argus defaults to resumable HTTPS downloads instead of Xet/CAS chunk reconstruction, which is less reliable behind some mirrors and proxies. Set `HF_HUB_DISABLE_XET=0` when starting Argus to opt back into Xet.
-- **Automatic cache cleanup** — before each start, Argus removes only superseded partials for the selected model while retaining the newest partial for resume. Other models in the shared Hugging Face cache are never touched.
+- **Resilient downloads** — Mira defaults to resumable HTTPS downloads instead of Xet/CAS chunk reconstruction, which is less reliable behind some mirrors and proxies. Set `HF_HUB_DISABLE_XET=0` when starting Mira to opt back into Xet.
+- **Automatic cache cleanup** — before each start, Mira removes only superseded partials for the selected model while retaining the newest partial for resume. Other models in the shared Hugging Face cache are never touched.
 - **Configurable** — model, host, port, and extra `mlx_vlm.server` flags in one config file.
 
 ## Requirements
 
-- Apple Silicon Mac (MLX requirement), macOS 13+
+- Apple Silicon Mac, macOS 26.2+ (required by the bundled media runtimes)
 - [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) ≥ 0.6.13: `uv tool install -p 3.12 mlx-vlm` (or `pip install mlx-vlm`)
 - Xcode Command Line Tools (for `swiftc` and `make`)
+
+The release bundles pinned, checksum-verified VPIPE and mlx-serve runtimes. Model
+weights are not redistributed; each media model is fetched from its public model
+repository on first use.
 
 ## Install
 
 ```bash
-git clone https://github.com/wangxiuwen/argus.git
-cd argus
+git clone https://github.com/wangxiuwen/mira.git
+cd mira
 make install
-open ~/Applications/Argus.app
+open ~/Applications/Mira.app
 ```
 
 ## Usage
 
-Click the menu bar icon → **Start Server**. The first run downloads the model; later runs load it in ~1–2 minutes. When the icon turns 🟢 the API is ready:
+Click the menu bar eye → **Start Server**. The first run downloads the model; later runs load it in ~1–2 minutes. When the status says ready, the API is available:
 
 ```bash
 curl http://127.0.0.1:8090/v1/chat/completions -H 'Content-Type: application/json' -d '{
@@ -60,35 +66,35 @@ Any OpenAI SDK works — point `base_url` at `http://127.0.0.1:8090/v1`.
 ### CLI
 
 ```bash
-argus start       # start (auto-downloads model on first run)
-argus stop
-argus restart
-argus status      # ready / loading / not running
-argus log         # tail the server log
+mira start       # start (auto-downloads model on first run)
+mira stop
+mira restart
+mira status      # ready / loading / not running
+mira log         # tail the server log
 
-argus ask "what is in this image?" shot.png   # one-shot, images optional
-argus ask --think "17*23?"                    # let it reason first
-argus chat        # interactive; /think toggles reasoning, /new resets
-argus ui          # open the chat interface in a browser
+mira ask "what is in this image?" shot.png   # one-shot, images optional
+mira ask --think "17*23?"                    # let it reason first
+mira chat        # interactive; /think toggles reasoning, /new resets
+mira ui          # open the chat interface in a browser
 
-argus use mlx-community/Qwen3.8-27B-4bit      # switch model and restart
-argus download    # pre-download the configured model
-argus config      # show effective settings
+mira use mlx-community/Qwen3.8-27B-4bit      # switch model and restart
+mira download    # pre-download the configured model
+mira config      # show effective settings
 ```
 
 ### Coding tools
 
-Argus can launch coding agents against the local model. The compatibility
+Mira can launch coding agents against the local model. The compatibility
 bridge keeps each client from replacing the model already loaded in memory.
 
 ```bash
-argus launch                         # list supported tools and install status
-argus launch codex                   # Codex CLI
-argus launch aider --message "help" # aider (extra arguments pass through)
-argus launch opencode                # OpenCode
-argus launch claude                  # Claude Code via Anthropic Messages API
-argus launch shell                   # shell with local API variables set
-argus bridge status                  # inspect the bridge separately
+mira launch                         # list supported tools and install status
+mira launch codex                   # Codex CLI
+mira launch aider --message "help" # aider (extra arguments pass through)
+mira launch opencode                # OpenCode
+mira launch claude                  # Claude Code via Anthropic Messages API
+mira launch shell                   # shell with local API variables set
+mira bridge status                  # inspect the bridge separately
 ```
 
 The bridge listens on `127.0.0.1:8092` by default and starts automatically.
@@ -99,20 +105,21 @@ tools while preventing a large user skill/MCP setup from overwhelming the
 local model's prompt. To load your full Claude configuration instead:
 
 ```bash
-ARGUS_CLAUDE_FULL=1 argus launch claude
+ARGUS_CLAUDE_FULL=1 mira launch claude
 ```
 
 OpenCode also uses an isolated local-only provider by default, so existing
 cloud credentials and MCP configuration are not loaded accidentally. To keep
-your normal OpenCode plugins/MCPs while still forcing inference through Argus:
+your normal OpenCode plugins/MCPs while still forcing inference through Mira:
 
 ```bash
-ARGUS_OPENCODE_FULL=1 argus launch opencode
+ARGUS_OPENCODE_FULL=1 mira launch opencode
 ```
 
 ### Configuration
 
-`~/.config/argus/config` (created on demand, `KEY=VALUE` lines):
+`~/.config/argus/config` (the legacy path is retained so existing installs keep
+their settings; created on demand as `KEY=VALUE` lines):
 
 ```ini
 MODEL=mlx-community/Qwen3.8-27B-bf16
@@ -124,7 +131,7 @@ MAX_TOKENS=4096
 EXTRA_ARGS=--kv-bits 8
 ```
 
-`MAX_TOKENS` controls both Argus clients and the server-side generation cap.
+`MAX_TOKENS` controls both Mira clients and the server-side generation cap.
 `EXTRA_ARGS` is passed straight to `mlx_vlm.server` — see
 `mlx_vlm.server --help` for KV-cache quantization, thinking budget, draft
 models and more.
@@ -145,7 +152,9 @@ Any model supported by mlx-vlm works. For Qwen3.8-27B on different RAM budgets:
 make uninstall
 ```
 
-Model weights live in `~/.cache/huggingface/hub` — remove them there if you want the disk back.
+Chat model weights live in `~/.cache/huggingface/hub`; media weights use Mira's
+local media stores and `~/.mlx-serve/models`. They are intentionally left in place
+when uninstalling so an app reinstall does not download them again.
 
 ## License
 

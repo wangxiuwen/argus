@@ -1,4 +1,5 @@
 .build/
+.cache/
 !Argus/
 .DS_Store
 dist/

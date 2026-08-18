@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Anthropic-compatible bridge for Argus.
+"""Anthropic-compatible bridge for Mira.
 
 Serves POST /v1/messages in Anthropic's Messages format and translates to the
 OpenAI /v1/chat/completions endpoint that mlx-vlm exposes, so Anthropic-protocol
@@ -88,6 +88,45 @@ def loaded_model():
         _loaded["id"] = None
         _loaded["at"] = 0.0
     return _loaded["id"]
+
+
+def codex_model_info(model_id):
+    """Return the strict model-catalog shape expected by current Codex."""
+    return {
+        "slug": model_id,
+        "display_name": model_id,
+        "description": "Local model served by Mira",
+        "default_reasoning_level": "medium",
+        "supported_reasoning_levels": [],
+        "shell_type": "shell_command",
+        "visibility": "list",
+        "supported_in_api": True,
+        "priority": 1,
+        "model_messages": {
+            "instructions_template": (
+                "You are a capable coding assistant. Follow the user's "
+                "instructions and use the available tools."
+            ),
+            "instructions_variables": None,
+        },
+        "default_reasoning_summary": "none",
+        "support_verbosity": False,
+        "default_verbosity": "medium",
+        "apply_patch_tool_type": "freeform",
+        "web_search_tool_type": "text",
+        "truncation_policy": {"mode": "tokens", "limit": 10000},
+        "supports_parallel_tool_calls": True,
+        "supports_image_detail_original": True,
+        "context_window": 65536,
+        "max_context_window": 65536,
+        "effective_context_window_percent": 95,
+        "experimental_supported_tools": [],
+        "input_modalities": ["text", "image"],
+        "supports_search_tool": False,
+        "use_responses_lite": False,
+        "tool_mode": "code_mode_only",
+        "multi_agent_version": "v2",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -418,17 +457,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # shapes so neither client has to fall back with a decode error.
                 self._json({
                     "data": rows,
-                    "models": [{
-                        "slug": m["id"],
-                        "display_name": m["id"],
-                        "description": "Local model served by Argus",
-                        "default_reasoning_level": "medium",
-                        "supported_reasoning_levels": [],
-                        "shell_type": "shell_command",
-                        "visibility": "list",
-                        "supported_in_api": True,
-                        "priority": 1,
-                    } for m in rows],
+                    "models": [codex_model_info(m["id"]) for m in rows],
                 })
             except OSError as e:
                 self._error(f"upstream unreachable: {e}", 502)
@@ -570,6 +599,6 @@ class Server(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     with Server(("127.0.0.1", PORT), Handler) as srv:
-        print(f"Argus Anthropic bridge on http://127.0.0.1:{PORT} (upstream: {API})")
+        print(f"Mira Anthropic bridge on http://127.0.0.1:{PORT} (upstream: {API})")
         sys.stdout.flush()
         srv.serve_forever()

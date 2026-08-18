@@ -70,6 +70,14 @@ class OpenAIRouteTests(unittest.TestCase):
     def test_unrelated_route_is_not_forwarded(self):
         self.assertFalse(bridge.openai_passthrough_route("/v1/messages"))
 
+    def test_codex_catalog_has_strict_current_metadata(self):
+        model = bridge.codex_model_info("local/model")
+        self.assertEqual(model["slug"], "local/model")
+        self.assertIs(model["support_verbosity"], False)
+        self.assertEqual(model["input_modalities"], ["text", "image"])
+        self.assertTrue(model["model_messages"]["instructions_template"])
+        self.assertNotIn("Argus", model["description"])
+
 
 class TranslationTests(unittest.TestCase):
     def test_system_messages_are_merged_at_the_front(self):

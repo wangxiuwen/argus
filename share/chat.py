@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Argus CLI chat client — talks to the local mlx-vlm OpenAI-compatible server.
+"""Mira CLI chat client — talks to the local mlx-vlm OpenAI-compatible server.
 
 Usage (normally invoked via `argus ask` / `argus chat`):
   chat.py ask "prompt" [image.png ...]
@@ -31,7 +31,7 @@ def get_model():
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
         if CONFIGURED_MODEL:
             return CONFIGURED_MODEL
-        sys.exit(f"server not reachable at {API} — start it with: argus start")
+        sys.exit(f"server not reachable at {API} — start it with: mira start")
 
 
 def img_part(path):
@@ -88,7 +88,7 @@ def stream_chat(messages, model, thinking=False):
     except urllib.error.URLError as e:
         print("\r\033[K", end="")
         reason = getattr(e, "reason", e)
-        sys.exit(f"server not reachable at {API}: {reason} — start it with: argus start")
+        sys.exit(f"server not reachable at {API}: {reason} — start it with: mira start")
     except KeyboardInterrupt:
         print("\r\033[K(stopped)")
         return "".join(out)
@@ -126,7 +126,7 @@ def cmd_ask(argv):
             argv.remove(flag)
             thinking = True
     if not argv:
-        sys.exit('usage: argus ask [--think] "prompt" [image.png ...]')
+        sys.exit('usage: mira ask [--think] "prompt" [image.png ...]')
     text, images = split_images(argv)
     model = get_model()
     for p in images:
@@ -138,7 +138,7 @@ def cmd_ask(argv):
 def cmd_chat():
     model = get_model()
     thinking = False
-    print(f"Argus chat — model: {model}")
+    print(f"Mira chat — model: {model}")
     print("Drop or type image paths inside your message to attach them.")
     print("Commands: /new (reset context)  /think (toggle thinking)  /quit\n")
     messages = []

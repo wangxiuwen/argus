@@ -1,5 +1,5 @@
 #!/bin/sh
-# Argus installer — run from inside the unpacked release directory.
+# Mira installer — run from inside the unpacked release directory.
 set -e
 
 APP_DIR="$HOME/Applications"
@@ -8,18 +8,22 @@ SHARE_DIR="$HOME/.local/share/argus"
 
 mkdir -p "$APP_DIR" "$BIN_DIR" "$SHARE_DIR"
 
-rm -rf "$APP_DIR/Argus.app"
-cp -R Argus.app "$APP_DIR/"
+rm -rf "$APP_DIR/Mira.app"
+cp -R Mira.app "$APP_DIR/"
 # release archives arrive quarantined; the app is ad-hoc signed, so clear the flag
-xattr -dr com.apple.quarantine "$APP_DIR/Argus.app" 2>/dev/null || true
+xattr -dr com.apple.quarantine "$APP_DIR/Mira.app" 2>/dev/null || true
 
 install -m 755 bin/argus "$BIN_DIR/argus"
+install -m 755 bin/argus "$BIN_DIR/mira"
 install -m 644 share/chat.py share/ui.py share/ui.html share/settings.html \
-  share/launch.py share/bridge.py share/prune.py "$SHARE_DIR/"
+  share/launch.py share/bridge.py share/prune.py share/video.py share/music.py \
+  share/image.py "$SHARE_DIR/"
+mkdir -p "$SHARE_DIR/video-pipelines"
+install -m 644 share/video-pipelines/*.vpipeline "$SHARE_DIR/video-pipelines/"
 
 echo "Installed:"
-echo "  $APP_DIR/Argus.app"
-echo "  $BIN_DIR/argus"
+echo "  $APP_DIR/Mira.app"
+echo "  $BIN_DIR/mira"
 echo
 if ! command -v mlx_vlm.server >/dev/null 2>&1 && [ ! -x "$BIN_DIR/mlx_vlm.server" ]; then
   echo "Next: install the inference server"
@@ -28,6 +32,6 @@ if ! command -v mlx_vlm.server >/dev/null 2>&1 && [ ! -x "$BIN_DIR/mlx_vlm.serve
 fi
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *) echo "Add $BIN_DIR to your PATH to use the argus command."; echo ;;
+  *) echo "Add $BIN_DIR to your PATH to use the mira command."; echo ;;
 esac
-echo "Then: open $APP_DIR/Argus.app   (or run: argus start)"
+echo "Then: open $APP_DIR/Mira.app   (or run: mira start)"

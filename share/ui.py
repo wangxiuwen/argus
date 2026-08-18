@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Argus web chat UI — serves ui.html and proxies /v1/* to the local server.
+"""Mira web chat UI — serves ui.html and proxies /v1/* to the local server.
 
 The proxy keeps everything same-origin so no CORS setup is needed on the
 mlx-vlm server. SSE streaming responses are forwarded line by line.
@@ -19,12 +19,18 @@ import urllib.parse
 import urllib.request
 
 API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
+VIDEO_API = os.environ.get("MIRA_VIDEO_API", "http://127.0.0.1:9877")
+MUSIC_API = os.environ.get("MIRA_MUSIC_API", "http://127.0.0.1:9879")
+IMAGE_API = os.environ.get("MIRA_IMAGE_API", "http://127.0.0.1:9880")
 PORT = int(os.environ.get("ARGUS_UI_PORT", "8091"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 ARGUS = os.path.expanduser("~/.local/bin/argus")
 CONFIG = os.path.expanduser("~/.config/argus/config")
 SERVER_PIDFILE = os.path.expanduser("~/.local/state/argus/server.pid")
 SERVER_LOG = os.path.expanduser("~/Library/Logs/argus.log")
+VIDEO_SERVER = os.path.join(HERE, "video.py")
+MUSIC_SERVER = os.path.join(HERE, "music.py")
+IMAGE_SERVER = os.path.join(HERE, "image.py")
 
 VARIANTS = [
     {"name": "Qwen3.8-27B bf16", "id": "mlx-community/Qwen3.8-27B-bf16", "gb": 54.7},
@@ -86,7 +92,7 @@ def variant_list():
 def local_models():
     """Every model already in the Hugging Face cache that mlx-vlm could load.
 
-    Argus is not Qwen-specific: anything mlx-vlm supports (gemma, mistral,
+    Mira is not Qwen-specific: anything mlx-vlm supports (gemma, mistral,
     pixtral, internvl, glm4v, minicpm-v, moondream, llava, smolvlm, …) shows up
     here once it is on disk.
     """
@@ -193,7 +199,7 @@ def trusted_browser_origin(origin, port, fetch_site=None):
 
     CLI clients do not send Origin or Sec-Fetch-Site.  Browsers do, so a page
     on the public web must not be able to switch models, rewrite config, or
-    invoke local desktop actions through Argus's loopback HTTP server.
+    invoke local desktop actions through Mira's loopback HTTP server.
     """
     if fetch_site == "cross-site":
         return False
@@ -387,6 +393,72 @@ def launch_argus_later(*args, delay=0.4):
     timer.start()
 
 
+def ensure_video_server():
+    try:
+        urllib.request.urlopen(VIDEO_API + "/api/status", timeout=1).read()
+        return True
+    except OSError:
+        pass
+    if not os.path.isfile(VIDEO_SERVER):
+        return False
+    env = dict(os.environ)
+    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Mira.app"))
+    subprocess.Popen([sys.executable, VIDEO_SERVER], env=env,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    for _ in range(20):
+        try:
+            urllib.request.urlopen(VIDEO_API + "/api/status", timeout=.5).read()
+            return True
+        except OSError:
+            threading.Event().wait(.1)
+    return False
+
+
+def ensure_music_server():
+    try:
+        urllib.request.urlopen(MUSIC_API + "/api/status", timeout=1).read()
+        return True
+    except OSError:
+        pass
+    if not os.path.isfile(MUSIC_SERVER):
+        return False
+    env = dict(os.environ)
+    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Mira.app"))
+    subprocess.Popen([sys.executable, MUSIC_SERVER], env=env,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    for _ in range(20):
+        try:
+            urllib.request.urlopen(MUSIC_API + "/api/status", timeout=.5).read()
+            return True
+        except OSError:
+            threading.Event().wait(.1)
+    return False
+
+
+def ensure_image_server():
+    try:
+        urllib.request.urlopen(IMAGE_API + "/api/status", timeout=1).read()
+        return True
+    except OSError:
+        pass
+    if not os.path.isfile(IMAGE_SERVER):
+        return False
+    env = dict(os.environ)
+    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Mira.app"))
+    subprocess.Popen([sys.executable, IMAGE_SERVER], env=env,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    for _ in range(20):
+        try:
+            urllib.request.urlopen(IMAGE_API + "/api/status", timeout=.5).read()
+            return True
+        except OSError:
+            threading.Event().wait(.1)
+    return False
+
+
 def startup_stage(model):
     """What the server is doing while it is not answering yet.
 
@@ -439,7 +511,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         except OSError:
             body = json.dumps({"error": "the model server is not answering yet — "
-                                        "wait for the status dot to turn green, or run: argus start"}).encode()
+                                        "wait for the status dot to turn green, or run: mira start"}).encode()
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -451,7 +523,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(upstream.status)
         self.send_header("Content-Type", ctype)
         if "text/event-stream" in ctype:
-            # forward SSE line by line so tokens appear as they are generated
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
@@ -467,6 +538,70 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+    def _video_proxy(self, endpoint, data=None):
+        if not ensure_video_server():
+            return self._send_json({"error": "Mira video service is not available"}, 503)
+        req = urllib.request.Request(VIDEO_API + endpoint, data=data)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            upstream = urllib.request.urlopen(req, timeout=900)
+            body = upstream.read()
+            code = upstream.status
+            ctype = upstream.headers.get("Content-Type", "application/json")
+        except urllib.error.HTTPError as e:
+            body, code = e.read(), e.code
+            ctype = e.headers.get("Content-Type", "application/json")
+        except OSError as e:
+            return self._send_json({"error": f"video service error: {e}"}, 502)
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _music_proxy(self, endpoint, data=None):
+        if not ensure_music_server():
+            return self._send_json({"error": "Mira music service is not available"}, 503)
+        req = urllib.request.Request(MUSIC_API + endpoint, data=data)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            upstream = urllib.request.urlopen(req, timeout=1900)
+            body, code = upstream.read(), upstream.status
+            ctype = upstream.headers.get("Content-Type", "application/json")
+        except urllib.error.HTTPError as e:
+            body, code = e.read(), e.code
+            ctype = e.headers.get("Content-Type", "application/json")
+        except OSError as e:
+            return self._send_json({"error": f"music service error: {e}"}, 502)
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _image_proxy(self, endpoint, data=None):
+        if not ensure_image_server():
+            return self._send_json({"error": "Mira image service is not available"}, 503)
+        req = urllib.request.Request(IMAGE_API + endpoint, data=data)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            upstream = urllib.request.urlopen(req, timeout=1900)
+            body, code = upstream.read(), upstream.status
+            ctype = upstream.headers.get("Content-Type", "application/json")
+        except urllib.error.HTTPError as e:
+            body, code = e.read(), e.code
+            ctype = e.headers.get("Content-Type", "application/json")
+        except OSError as e:
+            return self._send_json({"error": f"image service error: {e}"}, 502)
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_json(self, obj, code=200):
         body = json.dumps(obj).encode()
@@ -489,7 +624,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             raise ValueError("invalid JSON") from e
 
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
+        route = urllib.parse.urlparse(self.path).path
+        if route in ("/", "/index.html"):
             self._serve_html()
         elif self.path == "/settings":
             self._serve_html("settings.html")
@@ -525,6 +661,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path.startswith("/argus/search"):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("q", [""])[0]
             self._send_json({"results": search_hub(q) if len(q) >= 2 else []})
+        elif self.path == "/mira/video/status":
+            self._video_proxy("/api/status")
+        elif self.path == "/mira/video/outputs":
+            self._video_proxy("/api/outputs")
+        elif self.path == "/mira/music/status":
+            self._music_proxy("/api/status")
+        elif self.path == "/mira/music/list":
+            self._music_proxy("/api/list")
+        elif self.path == "/mira/image/status":
+            self._image_proxy("/api/status")
+        elif self.path == "/mira/image/list":
+            self._image_proxy("/api/list")
         elif self.path.startswith("/v1/"):
             self._proxy()
         else:
@@ -570,6 +718,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
             subprocess.Popen(["open", os.path.expanduser("~/Library/Logs/argus.log")],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._send_json({"ok": True})
+        elif self.path in ("/mira/video/prepare", "/mira/video/generate", "/mira/video/cancel"):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send_json({"error": "invalid Content-Length"}, 400)
+            if not 0 <= length <= 1_000_000:
+                return self._send_json({"error": "request body is too large"}, 413)
+            endpoint = "/api/" + self.path.rsplit("/", 1)[-1]
+            self._video_proxy(endpoint, self.rfile.read(length))
+        elif self.path in ("/mira/music/prepare", "/mira/music/generate"):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send_json({"error": "invalid Content-Length"}, 400)
+            if not 0 <= length <= 1_000_000:
+                return self._send_json({"error": "request body is too large"}, 413)
+            endpoint = "/api/" + self.path.rsplit("/", 1)[-1]
+            self._music_proxy(endpoint, self.rfile.read(length))
+        elif self.path in ("/mira/image/prepare", "/mira/image/generate"):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send_json({"error": "invalid Content-Length"}, 400)
+            if not 0 <= length <= 1_000_000:
+                return self._send_json({"error": "request body is too large"}, 413)
+            endpoint = "/api/" + self.path.rsplit("/", 1)[-1]
+            self._image_proxy(endpoint, self.rfile.read(length))
         elif self.path.startswith("/v1/"):
             try:
                 length = int(self.headers.get("Content-Length", 0))
@@ -591,6 +766,6 @@ class Server(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     with Server(("127.0.0.1", PORT), Handler) as srv:
-        print(f"Argus UI on http://127.0.0.1:{PORT} (API: {API})")
+        print(f"Mira UI on http://127.0.0.1:{PORT} (API: {API})")
         sys.stdout.flush()
         srv.serve_forever()

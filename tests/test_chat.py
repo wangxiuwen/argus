@@ -42,7 +42,7 @@ class ChatTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as stopped:
                 chat.stream_chat([{"role": "user", "content": "hello"}], "local/model")
         self.assertIn("server not reachable", str(stopped.exception))
-        self.assertIn("argus start", str(stopped.exception))
+        self.assertIn("mira start", str(stopped.exception))
 
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""argus launch — run a coding agent or client against the local Argus server.
+"""mira launch — run a coding agent or client against the local Mira server.
 
 Sets the right environment for the tool and execs it, so the tool talks to
-Argus instead of a cloud API. Both protocols go through the compatibility
-bridge, which pins client requests to the model already loaded by Argus.
+Mira instead of a cloud API. Both protocols go through the compatibility
+bridge, which pins client requests to the model already loaded by Mira.
 """
 import json
 import os
@@ -16,7 +16,7 @@ import urllib.request
 API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
 BRIDGE = os.environ.get("ARGUS_BRIDGE", "http://127.0.0.1:8092")
 CONFIGURED_MODEL = os.environ.get("ARGUS_MODEL")
-KEY = "argus"
+KEY = "mira"
 try:
     MAX_TOKENS = int(os.environ.get("ARGUS_MAX_TOKENS", "4096"))
 except ValueError:
@@ -44,7 +44,7 @@ TOOLS = {
     "claude": {
         "name": "Claude Code", "bin": "claude", "protocol": "anthropic",
         "install": "npm i -g @anthropic-ai/claude-code",
-        "desc": "Anthropic's coding tool (via the Argus Anthropic bridge)",
+        "desc": "Anthropic's coding tool (via the Mira Anthropic bridge)",
     },
     "shell": {
         "name": "Shell", "bin": os.environ.get("SHELL", "/bin/zsh"), "protocol": "openai",
@@ -96,7 +96,7 @@ def ensure_bridge():
 
 
 def list_tools():
-    print("argus launch <tool> — run a tool against your local model\n")
+    print("mira launch <tool> — run a tool against your local model\n")
     for key, t in TOOLS.items():
         have = shutil.which(t["bin"]) is not None
         mark = "✓" if have else "·"
@@ -109,10 +109,10 @@ def list_tools():
 def opencode_config(model, base, context_limit=32768):
     return {
         "$schema": "https://opencode.ai/config.json",
-        "model": "argus/local",
+        "model": "mira/local",
         "provider": {
-            "argus": {
-                "name": "Argus Local",
+            "mira": {
+                "name": "Mira Local",
                 "npm": "@ai-sdk/openai-compatible",
                 "options": {"apiKey": KEY, "baseURL": base},
                 "models": {
@@ -145,15 +145,15 @@ def command_args(key, binary, tool, model, where, extra, claude_full=False,
         # Codex ignores OPENAI_MODEL for its visible session model, and using
         # an arbitrary model with the built-in `openai` provider is rejected
         # for ChatGPT-authenticated users before a local request is sent.
-        # Register the Argus bridge as an explicit Responses-compatible local
+        # Register the Mira bridge as an explicit Responses-compatible local
         # provider for this process only; the user's Codex config is untouched.
         args += [
-            "--config", 'model_provider="argus"',
-            "--config", 'model_providers.argus.name="Argus Local"',
-            "--config", f"model_providers.argus.base_url={json.dumps(where)}",
-            "--config", 'model_providers.argus.env_key="OPENAI_API_KEY"',
-            "--config", 'model_providers.argus.wire_api="responses"',
-            "--config", "model_providers.argus.requires_openai_auth=false",
+            "--config", 'model_provider="mira"',
+            "--config", 'model_providers.mira.name="Mira Local"',
+            "--config", f"model_providers.mira.base_url={json.dumps(where)}",
+            "--config", 'model_providers.mira.env_key="OPENAI_API_KEY"',
+            "--config", 'model_providers.mira.wire_api="responses"',
+            "--config", "model_providers.mira.requires_openai_auth=false",
         ]
         if "--model" not in extra and "-m" not in extra:
             args += ["--model", model]
@@ -175,7 +175,7 @@ def main(argv):
 
     model = server_model()
     if not model:
-        print(f"Argus isn't answering at {API} — start it first: argus start")
+        print(f"Mira isn't answering at {API} — start it first: mira start")
         return 1
 
     binary = shutil.which(tool["bin"]) or (tool["bin"] if os.path.isabs(tool["bin"]) else None)
@@ -214,7 +214,7 @@ def main(argv):
             # OpenCode ignores OPENAI_BASE_URL as a provider override, so its
             # local provider must always be explicit. Full mode keeps user
             # customizations, but this late inline layer still pins the model
-            # to Argus instead of silently returning to a cloud provider.
+            # to Mira instead of silently returning to a cloud provider.
             env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
                 opencode_config(model, base, context_limit))
             if not opencode_full:

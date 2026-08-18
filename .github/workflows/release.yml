@@ -35,15 +35,18 @@ jobs:
         run: |
           set -e
           tar -tzf dist/*.tar.gz > files.txt
-          for want in ./Argus.app/Contents/Info.plist ./Argus.app/Contents/MacOS/Argus \
+          for want in ./Mira.app/Contents/Info.plist ./Mira.app/Contents/MacOS/Mira \
+                      ./Mira.app/Contents/Helpers/vpipe \
+                      ./Mira.app/Contents/Helpers/mlx-serve/mlx-serve \
                       ./bin/argus ./share/chat.py ./share/ui.py ./share/ui.html \
                       ./share/settings.html ./share/bridge.py ./share/launch.py \
-                      ./share/prune.py ./install.sh ./README.md ./LICENSE; do
+                      ./share/prune.py ./share/video.py ./share/music.py \
+                      ./share/image.py ./install.sh ./README.md ./LICENSE; do
             grep -qx "$want" files.txt || { echo "missing $want"; exit 1; }
           done
           VERSION="${RELEASE_TAG#v}"
           BUNDLE_VERSION="$(plutil -extract CFBundleShortVersionString raw -o - \
-            .build/stage/Argus.app/Contents/Info.plist)"
+            .build/stage/Mira.app/Contents/Info.plist)"
           test "$BUNDLE_VERSION" = "$VERSION" || {
             echo "bundle version $BUNDLE_VERSION does not match $VERSION"; exit 1;
           }
@@ -55,15 +58,15 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           gh release create "$TAG" dist/*.tar.gz \
-            --title "Argus $TAG" \
+            --title "Mira $TAG" \
             --generate-notes \
             --notes "$(cat <<'EOF'
           ### Install
 
           ```sh
-          tar -xzf argus-*-macos-arm64.tar.gz
+          tar -xzf mira-*-macos-arm64.tar.gz
           ./install.sh
-          open ~/Applications/Argus.app
+          open ~/Applications/Mira.app
           ```
 
           Requires an Apple Silicon Mac and [mlx-vlm](https://github.com/Blaizzy/mlx-vlm):
@@ -71,6 +74,6 @@ jobs:
 
           The app is ad-hoc signed, not notarized. `install.sh` clears the quarantine
           flag for you; if you copy the app by hand, run
-          `xattr -dr com.apple.quarantine ~/Applications/Argus.app`.
+          `xattr -dr com.apple.quarantine ~/Applications/Mira.app`.
           EOF
           )" || gh release upload "$TAG" dist/*.tar.gz --clobber

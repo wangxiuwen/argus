@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Argus</title>
+<title>Mira</title>
 <style>
   :root {
-    --bg: #ffffff; --side: #f5f5f5; --text: #18181b; --muted: #8a8a91;
-    --border: #e6e6e9; --field: #f2f2f4; --hover: #eaeaee;
+    --bg: #ffffff; --side: #f7f7f8; --text: #18181b; --muted: #85858d;
+    --border: #e8e8eb; --field: #f5f5f7; --hover: #ececef;
     --user-bubble: #f0f0f3; --send: #18181b; --send-text: #ffffff;
   }
   @media (prefers-color-scheme: dark) {
@@ -18,6 +18,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body {
     margin: 0; background: var(--bg); color: var(--text); display: flex;
@@ -25,11 +26,15 @@
   }
   /* sidebar */
   #side {
-    width: 225px; flex: none; background: var(--side); border-right: 1px solid var(--border);
+    width: 226px; flex: none; background: var(--side); border-right: 1px solid var(--border);
     padding: 10px 10px; display: flex; flex-direction: column; gap: 2px;
   }
   #side.hidden { display: none; }
-  #sideTop { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+  #sideTop { height: 40px; display: flex; align-items: center; gap: 9px; padding: 0 8px; margin-bottom: 5px; }
+  .brand-eye { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; color: #fff; background: linear-gradient(145deg,#4f46e5,#a855f7); box-shadow: inset 0 0 0 1px #fff3, 0 4px 12px #6d5bea25; }
+  .brand-eye svg { width: 15px; height: 15px; }
+  .brand-name { font-weight: 650; letter-spacing: -.01em; }
+  #sideTop .icon-btn { margin-left: auto; }
   .icon-btn {
     background: none; border: none; color: var(--muted); cursor: pointer;
     padding: 5px; border-radius: 7px; line-height: 0;
@@ -64,13 +69,14 @@
   /* main */
   #main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
   #bar {
-    height: 38px; flex: none; display: flex; align-items: center; gap: 8px;
-    padding: 0 12px; -webkit-app-region: drag;
+    height: 50px; flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 0 17px; border-bottom: 1px solid var(--border); -webkit-app-region: drag;
   }
+  #moduleTitle { font-weight: 580; letter-spacing: -.01em; }
   #status { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
   #dot { width: 7px; height: 7px; border-radius: 50%; background: #c9c9cf; }
   #dot.ok { background: #22c55e; }
-  #log { flex: 1; overflow-y: auto; padding: 4px 20px 10px; }
+  #log { flex: 1; overflow-y: auto; padding: 20px 24px 12px; }
   /* Launch view: point other tools at the local API */
   #launch { flex: 1; overflow-y: auto; padding: 4px 20px 24px; display: none; }
   #launch .wrap { max-width: 700px; margin: 0 auto; }
@@ -100,24 +106,37 @@
   .copy:hover { background: var(--hover); color: var(--text); }
   body.launching #log, body.launching #composer { display: none; }
   body.launching #launch { display: block; }
+  .shortcut { color: var(--muted); font-size: 11px; white-space: nowrap; }
   #log.empty { display: flex; align-items: center; justify-content: center; }
-  #hero { text-align: center; color: var(--muted); }
-  #hero .eye { font-size: 44px; display: block; margin-bottom: 6px; }
+  #hero { width: min(560px,100%); text-align: center; color: var(--muted); padding-bottom: 90px; }
+  #hero .hero-eye { width: 50px; height: 50px; border-radius: 16px; margin: 0 auto 17px; display: grid; place-items: center; color: #fff; background: linear-gradient(145deg,#4f46e5,#a855f7); box-shadow: 0 10px 26px #6d5bea35; }
+  #hero .hero-eye svg { width: 27px; height: 27px; }
+  #hero h1 { color: var(--text); font-size: 24px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -.025em; }
   #hero .t { font-size: 13px; }
-  .msg { max-width: 700px; margin: 0 auto 16px; display: flex; }
+  .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 25px; text-align: left; }
+  .suggestion { min-height: 58px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 11px; padding: 11px 13px; cursor: pointer; line-height: 1.4; }
+  .suggestion:hover { background: var(--field); }
+  .msg { max-width: 820px; margin: 0 auto 16px; display: flex; }
   .msg.user { justify-content: flex-end; }
   .bubble { padding: 9px 13px; border-radius: 16px; white-space: pre-wrap; word-break: break-word; max-width: 88%; }
   .user .bubble { background: var(--user-bubble); }
   .bot .bubble { padding-left: 0; padding-right: 0; max-width: 100%; }
   .bubble img { max-width: 240px; max-height: 240px; border-radius: 10px; display: block; margin-bottom: 6px; }
+  .bubble .generated-image { max-width: min(680px,100%); max-height: 680px; border: 1px solid var(--border); }
+  .bubble video { display: block; width: min(680px,100%); aspect-ratio: 16/9; border-radius: 12px; background: #09090b; }
+  .bubble audio { display: block; width: min(680px,100%); margin-top: 8px; }
+  .media-card { width: min(680px,100%); border: 1px solid var(--border); border-radius: 13px; padding: 12px; background: var(--field); }
+  .media-card .media-title { font-weight: 600; margin-bottom: 7px; }
+  .media-progress { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12.5px; }
+  .media-progress progress { width: 150px; accent-color: #7c3aed; }
   .bubble details { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
   .bubble details pre { white-space: pre-wrap; margin: 4px 0 0; font: inherit; }
   .meta { display: block; color: var(--muted); font-size: 11.5px; margin-top: 7px; }
   /* composer card */
-  #composer { padding: 0 20px 22px; }
+  #composer { padding: 12px 22px 18px; background: linear-gradient(transparent,var(--bg) 18%); }
   #card {
-    max-width: 700px; margin: 0 auto; background: var(--field); border-radius: 18px;
-    padding: 12px 12px 10px;
+    max-width: 820px; margin: 0 auto; background: var(--field); border: 1px solid var(--border);
+    border-radius: 15px; padding: 11px 12px 10px; box-shadow: 0 7px 25px #0000000b;
   }
   #thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   #thumbs:empty { display: none; }
@@ -133,6 +152,14 @@
   }
   #input::placeholder { color: var(--muted); }
   #tools { display: flex; align-items: center; gap: 8px; }
+  #modeSelect, .gen-option {
+    height: 30px; border: 0; border-radius: 15px; background: var(--hover); color: var(--text);
+    padding: 0 10px; font: inherit; font-size: 13px;
+  }
+  #genOptions { display: none; gap: 8px; align-items: center; padding: 2px 3px 8px; }
+  #genOptions.show { display: flex; }
+  #lyrics { display: none; width: 100%; min-height: 74px; resize: vertical; border: 0; border-top: 1px solid var(--border); outline: 0; background: transparent; color: var(--text); font: inherit; padding: 8px 4px 5px; }
+  #lyrics.show { display: block; }
   .round {
     width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--hover);
     color: var(--text); font-size: 15px; cursor: pointer; flex: none;
@@ -199,6 +226,8 @@
 <body>
 <nav id="side">
   <div id="sideTop">
+    <span class="brand-eye"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.8 12s3.5-5.1 9.2-5.1 9.2 5.1 9.2 5.1-3.5 5.1-9.2 5.1S2.8 12 2.8 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg></span>
+    <span class="brand-name">Mira</span>
     <button class="icon-btn" id="toggleIn" title="Collapse sidebar">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
         <rect x="2.2" y="3.4" width="15.6" height="13.2" rx="2.6"/>
@@ -206,19 +235,22 @@
       </svg>
     </button>
   </div>
+  <button class="side-btn" id="chatBtn">
+    <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5h12v8.7H9l-3.7 2.5.8-2.5H4z"/></svg></span>对话
+  </button>
   <button class="side-btn" id="newChat">
     <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
-      stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16h9A1.5 1.5 0 0 0 16 14.5V10"/><path d="M13.4 3.6a1.4 1.4 0 0 1 2 2L10.6 10.4l-2.6.6.6-2.6z"/></svg></span>New Chat
+      stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16h9A1.5 1.5 0 0 0 16 14.5V10"/><path d="M13.4 3.6a1.4 1.4 0 0 1 2 2L10.6 10.4l-2.6.6.6-2.6z"/></svg></span>新对话
   </button>
   <button class="side-btn" id="launchBtn">
     <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
-      stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 12.5 4 11l2.2-2.6 3.1.4"/><path d="M7.5 11.6c1.6-4 4.6-7 8.9-8.1.4 4.4-2.1 7.9-5.3 10.2z"/><path d="M7.5 15.6 4.4 16l.4-3.1"/></svg></span>Launch
+      stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 12.5 4 11l2.2-2.6 3.1.4"/><path d="M7.5 11.6c1.6-4 4.6-7 8.9-8.1.4 4.4-2.1 7.9-5.3 10.2z"/><path d="M7.5 15.6 4.4 16l.4-3.1"/></svg></span>连接工具
   </button>
-  <div class="label">Chats</div>
+  <div class="label">对话记录</div>
   <div id="chats"></div>
   <button class="side-btn" id="openLog">
     <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
-      stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3" width="13" height="14" rx="2"/><line x1="6.5" y1="7" x2="13.5" y2="7"/><line x1="6.5" y1="10" x2="13.5" y2="10"/><line x1="6.5" y1="13" x2="11" y2="13"/></svg></span>Server Log
+      stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3" width="13" height="14" rx="2"/><line x1="6.5" y1="7" x2="13.5" y2="7"/><line x1="6.5" y1="10" x2="13.5" y2="10"/><line x1="6.5" y1="13" x2="11" y2="13"/></svg></span>运行日志
   </button>
   <div class="foot" id="apiFoot"></div>
 </nav>
@@ -230,30 +262,41 @@
         <line x1="7.9" y1="3.4" x2="7.9" y2="16.6"/>
       </svg>
     </button>
+    <span id="moduleTitle">本地助手</span>
     <span id="status"><span id="statusText">connecting…</span><span id="dot"></span></span>
   </div>
   <div id="log" class="empty">
-    <div id="hero"><span class="eye">👁️</span><span class="t">Ask anything — drop or paste an image</span></div>
+    <div id="hero"><span class="hero-eye"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.8 12s3.5-5.1 9.2-5.1 9.2 5.1 9.2 5.1-3.5 5.1-9.2 5.1S2.8 12 2.8 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,'image')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,'music')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,'video')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>
   </div>
   <div id="launch">
     <div class="wrap">
       <h2>Launch</h2>
-      <div class="sub">Copy a command and run it in your terminal — coding tools use the Argus bridge so they keep the loaded local model.</div>
+      <div class="sub">复制命令到终端运行；编码工具会通过 Mira 本地桥接服务使用当前模型。</div>
       <div id="cards"></div>
     </div>
   </div>
   <div id="composer">
     <div id="card">
       <div id="thumbs"></div>
-      <textarea id="input" rows="1" placeholder="Send a message"></textarea>
+      <textarea id="input" rows="1" placeholder="发送消息…"></textarea>
+      <textarea id="lyrics" placeholder="输入歌词，支持 [verse] / [chorus] 分段…"></textarea>
+      <div id="genOptions">
+        <select id="imageSize" class="gen-option"><option value="1024x1024">1024×1024</option><option value="1344x768">1344×768</option><option value="768x1344">768×1344</option></select>
+        <select id="videoSize" class="gen-option"><option value="960x544">960×544</option><option value="512x288">512×288</option></select>
+        <select id="videoFrames" class="gen-option"><option value="120">5 秒</option><option value="22">1 秒</option></select>
+        <select id="musicDuration" class="gen-option"><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">120 秒</option></select>
+        <span id="modeHint" class="shortcut"></span>
+      </div>
       <div id="tools">
         <button class="round" id="attach" title="Attach image">＋</button>
         <input type="file" id="file" accept="image/*" multiple hidden>
+        <select id="modeSelect" title="这条消息要生成什么"><option value="chat">对话</option><option value="image">图片</option><option value="music">音乐</option><option value="video">视频</option></select>
         <button id="think" title="Let the model think before answering">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
             stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2a4.3 4.3 0 0 0-4.3 4.3c0 1.2.5 2.2 1.3 3 .5.5.8 1.1.8 1.8v.7h4.4v-.7c0-.7.3-1.3.8-1.8a4.2 4.2 0 0 0 1.3-3A4.3 4.3 0 0 0 10 3.2z"/><line x1="8.2" y1="16.4" x2="11.8" y2="16.4"/></svg>
           Think
         </button>
+        <span class="shortcut">Enter 换行 · ⌘↵ 发送</span>
         <div id="picker">
           <button id="pickerBtn"><span class="name">Select a model</span><span class="caret">▾</span></button>
           <div id="menu">
@@ -273,7 +316,12 @@ let lastTps = 0;  // tokens/s reported by the server for the request in flight
 let ready = false, lastHealth = {};
 
 /* ---------- sidebar + chat history ---------- */
-const HERO = '<div id="hero"><span class="eye">👁️</span><span class="t">Ask anything — drop or paste an image</span></div>';
+const HERO = '<div id="hero"><span class="hero-eye"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.8 12s3.5-5.1 9.2-5.1 9.2 5.1 9.2 5.1-3.5 5.1-9.2 5.1S2.8 12 2.8 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,\'image\')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,\'music\')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,\'video\')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>';
+function useSuggestion(button, mode="chat") {
+  const input = $("input"); input.value = button.textContent; input.focus();
+  $("modeSelect").value = mode; paintMode();
+  input.dispatchEvent(new Event("input"));
+}
 let chats = [], curId = null;
 
 function setSidebar(hidden) {
@@ -368,6 +416,7 @@ function persistCurrent() {
   renderChats();
 }
 function newChat() {
+  $("moduleTitle").textContent = "本地助手";
   messages = [];
   curId = null;
   images = [];
@@ -377,10 +426,15 @@ function newChat() {
   renderChats();
   $("input").focus();
 }
+function showChat() {
+  document.body.classList.remove("launching");
+  $("moduleTitle").textContent = "本地助手";
+}
 function openChat(id) {
   const c = chats.find(x => x.id === id);
   if (!c) return;
   document.body.classList.remove("launching");
+  $("moduleTitle").textContent = "本地助手";
   curId = id;
   messages = c.messages;
   $("log").innerHTML = "";
@@ -390,11 +444,17 @@ function openChat(id) {
       ? m.content.filter(p => p.type === "image_url").map(p => p.image_url.url) : [];
     const text = typeof m.content === "string"
       ? m.content : (m.content.find(p => p.type === "text")?.text || "");
-    bubble(m.role === "user" ? "user" : "bot", text, imgs);
+    const b = bubble(m.role === "user" ? "user" : "bot", text, imgs);
+    if (m.kind) {
+      const card = document.createElement("div"); card.className = "media-card"; b.append(card);
+      if (m.status === "complete") renderMedia(card, m);
+      else card.textContent = m.error ? `生成失败：${m.error}` : "上次关闭界面时仍在生成；请重新提交这一条任务。";
+    }
   }
   renderChats();
 }
-$("newChat").onclick = () => { document.body.classList.remove("launching"); newChat(); };
+$("chatBtn").onclick = showChat;
+$("newChat").onclick = () => { showChat(); newChat(); };
 loadChats();
 renderChats();
 
@@ -403,19 +463,19 @@ const LAUNCH = api => [
   {icon: "⌨︎", name: "curl", desc: "Check the endpoint from a shell",
    cmd: `curl ${api}/chat/completions -H 'Content-Type: application/json' \\\n  -d '{"model":"MODEL","messages":[{"role":"user","content":"hello"}]}'`},
   {icon: "🐍", name: "OpenAI Python SDK", desc: "Any script written against the OpenAI client",
-   cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=argus python your_script.py`},
+   cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=mira python your_script.py`},
   {icon: "⬢", name: "OpenAI Node SDK", desc: "Same for JavaScript and TypeScript",
-   cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=argus node your_script.mjs`},
+   cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=mira node your_script.mjs`},
   {icon: "⌘", name: "Codex CLI", desc: "OpenAI's coding agent against your local model",
-   cmd: `argus launch codex`},
+   cmd: `mira launch codex`},
   {icon: "✎", name: "aider", desc: "Pair programming in your terminal",
-   cmd: `argus launch aider`},
+   cmd: `mira launch aider`},
   {icon: "◇", name: "OpenCode", desc: "Open-source coding agent against your local model",
-   cmd: `argus launch opencode`},
+   cmd: `mira launch opencode`},
   {icon: "✦", name: "Claude Code", desc: "Anthropic's coding agent in local-friendly bare mode",
-   cmd: `argus launch claude`},
+   cmd: `mira launch claude`},
   {icon: "⚙", name: "Any OpenAI-compatible app", desc: "Open WebUI, Continue, Zed, Raycast — paste these two values",
-   cmd: `Base URL: ${api}\nAPI key:  argus   (any non-empty string works)`},
+   cmd: `Base URL: ${api}\nAPI key:  mira   (any non-empty string works)`},
 ];
 
 async function renderLaunch() {
@@ -460,7 +520,110 @@ async function renderLaunch() {
 $("launchBtn").onclick = () => {
   renderLaunch();
   document.body.classList.add("launching");
+  $("moduleTitle").textContent = "连接工具";
 };
+
+/* ---------- unified creation modes ---------- */
+const MODE_INFO = {
+  chat:  {placeholder:"发送消息…", hint:"本地对话模型"},
+  image: {placeholder:"描述你想生成的图片…", hint:"FLUX.2-klein · 本地 4-bit"},
+  music: {placeholder:"描述曲风、情绪、速度与人声…", hint:"MiniMax Music 3 · 本地 8-bit"},
+  video: {placeholder:"描述画面、动作、镜头和声音…", hint:"MiniMax H3 · 本地 4-bit"},
+};
+function paintMode() {
+  const mode = $("modeSelect").value;
+  $("input").placeholder = MODE_INFO[mode].placeholder;
+  $("genOptions").classList.toggle("show", mode !== "chat");
+  $("lyrics").classList.toggle("show", mode === "music");
+  $("imageSize").hidden = mode !== "image";
+  $("videoSize").hidden = mode !== "video";
+  $("videoFrames").hidden = mode !== "video";
+  $("musicDuration").hidden = mode !== "music";
+  $("modeHint").textContent = MODE_INFO[mode].hint;
+  $("think").hidden = mode !== "chat";
+  $("picker").hidden = mode !== "chat";
+  $("attach").title = mode === "chat" ? "添加图片" : "添加参考图片";
+}
+$("modeSelect").onchange = paintMode;
+const requestedMode = new URLSearchParams(location.search).get("mode");
+if (MODE_INFO[requestedMode]) $("modeSelect").value = requestedMode;
+paintMode();
+
+async function mediaJson(url, options) {
+  const r = await fetch(url, options);
+  const body = await r.json();
+  if (!r.ok) throw Error(body.error || `HTTP ${r.status}`);
+  return body;
+}
+function mediaPost(kind, action, body={}) {
+  return mediaJson(`/mira/${kind}/${action}`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+}
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function runMedia(mode, prompt, record, bubbleEl) {
+  const started = Date.now();
+  const card = document.createElement("div"); card.className = "media-card";
+  const title = document.createElement("div"); title.className = "media-title";
+  title.textContent = ({image:"正在生成图片", music:"正在生成音乐", video:"正在生成视频"})[mode];
+  const progress = document.createElement("div"); progress.className = "media-progress";
+  const bar = document.createElement("progress"); const label = document.createElement("span");
+  bar.removeAttribute("value"); label.textContent = "正在启动本地模型…"; progress.append(bar,label); card.append(title,progress); bubbleEl.append(card);
+  try {
+    let payload;
+    if (mode === "image") payload = {prompt, size:$("imageSize").value, steps:4};
+    if (mode === "music") payload = {prompt, lyrics:$("lyrics").value.trim(), duration_seconds:+$("musicDuration").value};
+    if (mode === "video") {
+      const [width,height] = $("videoSize").value.split("x").map(Number);
+      payload = {prompt,width,height,frames:+$("videoFrames").value,steps:6,seed:6};
+    }
+    try { await mediaPost(mode, "generate", payload); }
+    catch (e) {
+      if (!/not prepared|尚未准备/i.test(e.message)) throw e;
+      label.textContent = "首次使用，正在下载模型…";
+      await mediaPost(mode, "prepare", {accept_license:true});
+      for (;;) {
+        const s = await mediaJson(`/mira/${mode}/status`);
+        if (s.error) throw Error(s.error);
+        if (s.model_ready && !s.running) break;
+        if (s.download?.percent != null) { bar.value=s.download.percent; bar.max=100; label.textContent=`下载模型 ${s.download.percent}%`; }
+        await delay(2000);
+      }
+      bar.removeAttribute("value");
+      await mediaPost(mode, "generate", payload);
+    }
+    for (;;) {
+      const s = await mediaJson(`/mira/${mode}/status`);
+      if (s.error) throw Error(s.error);
+      if (s.progress?.total) { bar.max=s.progress.total; bar.value=s.progress.step; }
+      label.textContent = `${s.stage === "generating" ? "正在生成" : "正在处理"}… ${Math.round((Date.now()-started)/1000)} 秒`;
+      if (!s.running) {
+        let output = s.output;
+        if (!output || (mode === "video" && output.startsWith("/") && !output.startsWith("/outputs/"))) {
+          const list = await mediaJson(`/mira/${mode}/${mode === "video" ? "outputs" : "list"}`);
+          const item = list[0]; output = typeof item === "string" ? `/files/${encodeURIComponent(item)}` : item?.url;
+        }
+        if (!output) throw Error("任务结束，但没有找到输出文件");
+        record.url = output.startsWith("http") ? output : `http://127.0.0.1:${mode === "video" ? 9877 : mode === "music" ? 9879 : 9880}${output}`;
+        record.status = "complete"; record.elapsed = Math.round((Date.now()-started)/1000);
+        persistCurrent(); renderMedia(card, record); return;
+      }
+      await delay(2000);
+    }
+  } catch (e) {
+    record.status = "failed"; record.error = e.message; persistCurrent();
+    card.textContent = `生成失败：${e.message}`; card.classList.add("notice");
+  }
+}
+
+function renderMedia(container, record) {
+  container.innerHTML = "";
+  const title = document.createElement("div"); title.className="media-title";
+  title.textContent = ({image:"生成的图片",music:"生成的音乐",video:"生成的视频"})[record.kind] + (record.elapsed ? ` · ${record.elapsed} 秒` : "");
+  container.append(title);
+  if (record.kind === "image") { const el=document.createElement("img"); el.className="generated-image"; el.src=record.url; container.append(el); }
+  if (record.kind === "music") { const el=document.createElement("audio"); el.controls=true; el.preload="metadata"; el.src=record.url; container.append(el); }
+  if (record.kind === "video") { const el=document.createElement("video"); el.controls=true; el.preload="metadata"; el.src=record.url; container.append(el); }
+}
 
 /* ---------- model picker ---------- */
 function shortName(id) { return id.split("/").pop(); }
@@ -600,7 +763,7 @@ async function pollReady() {
 }
 
 function startupText(h) {
-  if (h.stage === "failed") return h.error || "server failed — check argus log";
+  if (h.stage === "failed") return h.error || "服务启动失败，请查看 Mira 日志";
   if (!h.alive) return "server stopped";
   if (h.stage === "downloading") {
     const pct = h.percent != null ? ` ${h.percent}%` : "";
@@ -660,8 +823,24 @@ function bubble(role, text, imgs) {
   return b;
 }
 
+async function sendMedia(mode, text) {
+  if (busy || !text) return;
+  busy = true; $("send").disabled = true;
+  const imgs = images.slice(); images = []; $("thumbs").innerHTML = "";
+  $("input").value = ""; $("input").style.height = "auto";
+  bubble("user", text, imgs);
+  const user = {role:"user", content:text, mode};
+  const record = {role:"assistant", content:"", kind:mode, status:"running", prompt:text};
+  messages.push(user, record); persistCurrent();
+  const b = bubble("bot", "");
+  await runMedia(mode, text, record, b);
+  busy = false; $("send").disabled = false; $("input").focus();
+}
+
 async function send() {
   const text = $("input").value.trim();
+  const mode = $("modeSelect").value;
+  if (mode !== "chat") return sendMedia(mode, text);
   if (busy || (!text && !images.length) || !model) return;
   // don't fire into a server that is still downloading or loading — say what it's doing
   if (!ready) {
@@ -689,6 +868,7 @@ async function send() {
   // always ask for the model the server has loaded: mlx_vlm.server treats a
   // different name as "unload and load that instead", which stalls for minutes
   const serving = lastHealth.model || model;
+  const apiMessages = messages.filter(m => !m.kind && !m.mode).map(m => ({role:m.role, content:m.content}));
 
   // show pulsing dots + elapsed time until the first token arrives, and let Stop cancel
   const wait = document.createElement("span");
@@ -714,7 +894,7 @@ async function send() {
   try {
     const resp = await fetch("/v1/chat/completions", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({model: serving, messages, stream: true,
+      body: JSON.stringify({model: serving, messages: apiMessages, stream: true,
         max_tokens: lastHealth.max_tokens || 4096,
         enable_thinking: thinking}),
       signal: ctl.signal,
@@ -794,7 +974,7 @@ async function send() {
 }
 $("send").onclick = send;
 $("input").addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
 });
 $("input").addEventListener("input", function () {
   this.style.height = "auto";

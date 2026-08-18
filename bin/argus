@@ -1,5 +1,5 @@
 #!/bin/zsh
-# argus — manage a local mlx-vlm OpenAI-compatible server (Apple Silicon / MLX)
+# mira — manage a local mlx-vlm OpenAI-compatible server (Apple Silicon / MLX)
 # Config: ~/.config/argus/config  (KEY=VALUE, see `argus config`)
 
 CONFIG_DIR="$HOME/.config/argus"
@@ -7,7 +7,7 @@ CONFIG="$CONFIG_DIR/config"
 
 # Parse data as data.  Sourcing the config would execute shell syntax embedded
 # in a model id or EXTRA_ARGS, and a malformed hand-edited file could run
-# arbitrary commands whenever Argus starts.
+# arbitrary commands whenever Mira starts.
 MODEL="" PORT="" HOST="" UI_PORT="" BRIDGE_PORT="" MAX_TOKENS="" EXTRA_ARGS=""
 if [[ -f "$CONFIG" ]]; then
   while IFS='=' read -r task_key task_value; do
@@ -93,10 +93,15 @@ pid_listens() {
 
 server_pid() {
   local pid=""
-  [[ -f "$PIDFILE" ]] && pid="$(cat "$PIDFILE")"
-  if server_process_matches "$pid"; then
-    echo "$pid"
-    return 0
+  if [[ -f "$PIDFILE" ]]; then
+    pid="$(cat "$PIDFILE")"
+    if server_process_matches "$pid"; then
+      echo "$pid"
+      return 0
+    fi
+    # A pidfile is an ownership record. If it is stale, report that failure;
+    # never silently adopt a different matching listener on the same port.
+    return 1
   fi
   listener_pid "$PORT" "mlx_vlm.server"
 }
@@ -155,7 +160,7 @@ cmd_start() {
   sleep 0.3
   if ! server_process_matches "$pid"; then
     rm -f "$PIDFILE"
-    echo "server failed to start — see: argus log"
+    echo "server failed to start — see: mira log"
     return 1
   fi
   echo "pid $pid  log: $LOG"
@@ -183,15 +188,20 @@ cmd_stop() {
 }
 
 cmd_status() {
-  local actual_model
-  actual_model="$(curl -s -m 2 "http://$CONNECT_HOST:$PORT/health" 2>/dev/null | \
-    python3 -c 'import json,sys; print(json.load(sys.stdin).get("loaded_model") or "")' 2>/dev/null)"
-  if [[ -n "$actual_model" ]]; then
+  local actual_model="" pid=""
+  # A healthy listener on the configured port is not necessarily ours.  Check
+  # process ownership first so a stale pidfile cannot be masked by some other
+  # user's/server's endpoint (and so tests with isolated HOME stay isolated).
+  if pid="$(server_pid)"; then
+    actual_model="$(curl -s -m 2 "http://$CONNECT_HOST:$PORT/health" 2>/dev/null | \
+      python3 -c 'import json,sys; print(json.load(sys.stdin).get("loaded_model") or "")' 2>/dev/null)"
+  fi
+  if [[ -n "$pid" && -n "$actual_model" ]]; then
     echo "ready: http://$CONNECT_HOST:$PORT  model: $actual_model"
-  elif is_running; then
-    echo "busy or loading (pid $(server_pid)) — see: argus log"
+  elif [[ -n "$pid" ]]; then
+    echo "busy or loading (pid $pid) — see: mira log"
   elif [[ -f "$PIDFILE" ]]; then
-    echo "failed: server exited unexpectedly — see: argus log"
+    echo "failed: server exited unexpectedly — see: mira log"
     return 1
   else
     echo "not running"
@@ -212,7 +222,7 @@ cmd_download() {
 cmd_model() {
   if [[ -z "$1" ]]; then
     echo "current model: $MODEL"
-    echo "usage: argus model <huggingface-repo-id>   # e.g. mlx-community/Qwen3.8-27B-8bit"
+    echo "usage: mira model <huggingface-repo-id>   # e.g. mlx-community/Qwen3.8-27B-8bit"
     return 0
   fi
   if [[ "$1" == *$'\n'* || "$1" == *$'\r'* || "$1" == *'='* ]]; then
@@ -233,7 +243,7 @@ cmd_model() {
   done < "$CONFIG"
   (( found )) || print -r -- "MODEL=$1" >> "$temp_config"
   mv "$temp_config" "$CONFIG"
-  echo "model set to $1 (restart to apply: argus restart)"
+  echo "model set to $1 (restart to apply: mira restart)"
 }
 
 cmd_config() {
@@ -294,7 +304,7 @@ start_ui() {
     sleep 0.1
   done
   rm -f "$UI_PIDFILE"
-  echo "UI failed to start — see: argus log"
+  echo "UI failed to start — see: mira log"
   return 1
 }
 
@@ -368,7 +378,7 @@ cmd_bridge() {
         echo "bridge on http://127.0.0.1:$BRIDGE_PORT (OpenAI + Anthropic → http://$HOST:$PORT)"
       else
         rm -f "$BRIDGE_PIDFILE"
-        echo "bridge failed to start — see: argus log"
+        echo "bridge failed to start — see: mira log"
         return 1
       fi
       ;;
@@ -396,7 +406,7 @@ case "$1" in
   log)      touch "$LOG"; tail -f "$LOG" ;;
   download) cmd_download ;;
   model)    cmd_model "$2" ;;
-  use)      [[ -n "$2" ]] || { echo "usage: argus use <huggingface-repo-id>"; exit 1; }
+  use)      [[ -n "$2" ]] || { echo "usage: mira use <huggingface-repo-id>"; exit 1; }
             cmd_model "$2" || exit 1
             cmd_stop || exit 1
             MODEL="$2"
@@ -417,35 +427,35 @@ case "$1" in
               exec python3 "$SHARE/launch.py" "$@" ;;
   *)
     cat <<'EOF'
-argus — local vision-language model, menu bar + CLI
+mira — private local AI workspace, menu bar + CLI
 
 server:
-  argus start       start the server (auto-downloads model on first run)
-  argus stop        stop the server
-  argus restart     restart the server
-  argus status      ready / loading / not running
-  argus log         tail the server log
+  mira start       start the server (auto-downloads model on first run)
+  mira stop        stop the server
+  mira restart     restart the server
+  mira status      ready / loading / not running
+  mira log         tail the server log
 
 chat:
-  argus ask "prompt" [image.png ...]   one-shot question, images optional
-  argus chat                           interactive chat (drop image paths in)
-  argus ui                             open the web chat UI (paste/drop images)
-  argus ui stop                        stop the web UI
-  argus ui restart                     restart the web UI without opening a browser
+  mira ask "prompt" [image.png ...]   one-shot question, images optional
+  mira chat                           interactive chat (drop image paths in)
+  mira ui                             open the web chat UI (paste/drop images)
+  mira ui stop                        stop the web UI
+  mira ui restart                     restart the web UI without opening a browser
 
 use it from other tools:
-  argus launch                         list tools and whether they are installed
-  argus launch codex|aider|opencode    run an OpenAI-protocol tool against Argus
-  argus launch claude                  run Claude Code via the Anthropic bridge
-  argus launch shell                   a shell with the API env already set
-  argus bridge [stop|status]           the OpenAI + Anthropic compatibility endpoint
+  mira launch                         list tools and whether they are installed
+  mira launch codex|aider|opencode    run an OpenAI-protocol tool against Mira
+  mira launch claude                  run Claude Code via the Anthropic bridge
+  mira launch shell                   a shell with the API env already set
+  mira bridge [stop|status]           the OpenAI + Anthropic compatibility endpoint
 
 model:
-  argus use <id>    switch model and restart the server (e.g. a 4bit/8bit variant)
-  argus model [id]  show or set the model without restarting
-  argus download    pre-download the configured model
-  argus prune       delete superseded partial downloads from the HF cache
-  argus config      show config file and effective settings
+  mira use <id>    switch model and restart the server (e.g. a 4bit/8bit variant)
+  mira model [id]  show or set the model without restarting
+  mira download    pre-download the configured model
+  mira prune       delete superseded partial downloads from the HF cache
+  mira config      show config file and effective settings
 EOF
     ;;
 esac

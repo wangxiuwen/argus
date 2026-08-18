@@ -3,7 +3,7 @@ import ServiceManagement
 import UniformTypeIdentifiers
 import WebKit
 
-// Argus — macOS menu bar app to start/stop a local mlx-vlm server.
+// Mira — macOS menu bar app to start/stop local AI services.
 // Reads PORT/HOST/MODEL from ~/.config/argus/config (KEY=VALUE lines).
 
 struct Config {
@@ -58,6 +58,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         return "http://\(clientHost):\(config.port)"
     }
 
+    func setTray(symbol: String = "eye", color: NSColor = .secondaryLabelColor,
+                 tooltip: String = "Mira") {
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        statusItem.button?.title = ""
+        statusItem.button?.image = image
+        statusItem.button?.imagePosition = .imageOnly
+        statusItem.button?.contentTintColor = color
+        statusItem.button?.toolTip = tooltip
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Edit menu so ⌘C/⌘V/⌘A work inside the chat window (accessory apps have no default menu)
         let mainMenu = NSMenu()
@@ -73,15 +86,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         NSApp.mainMenu = mainMenu
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "⚪️A"
+        setTray()
 
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let openItem = NSMenuItem(title: "Open Argus", action: #selector(openChat), keyEquivalent: "o")
+        let openItem = NSMenuItem(title: "Open Mira", action: #selector(openChat), keyEquivalent: "o")
+        openItem.image = NSImage(systemSymbolName: "eye", accessibilityDescription: nil)
         openItem.target = self
         let menuSize = NSFont.menuFont(ofSize: 0).pointSize
         openItem.attributedTitle = NSAttributedString(
-            string: "Open Argus",
+            string: "Open Mira",
             attributes: [.font: NSFont.boldSystemFont(ofSize: menuSize)])
         menu.addItem(openItem)
         menu.addItem(NSMenuItem.separator())
@@ -116,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
-        let quitItem = NSMenuItem(title: "Quit Argus (server keeps running)", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Mira (server keeps running)", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
         statusItem.menu = menu
@@ -147,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
                 contentRect: NSRect(x: 0, y: 0, width: 920, height: 720),
                 styleMask: [.titled, .closable, .resizable, .miniaturizable],
                 backing: .buffered, defer: false)
-            win.title = "Argus"
+            win.title = "Mira"
             win.minSize = NSSize(width: 480, height: 400)
             win.center()
             win.contentView = web
@@ -201,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
     @objc func startServer() {
         config = Config.load()
         runCtl("start")
-        statusItem.button?.title = "🟡A"
+        setTray(color: .systemOrange, tooltip: "Mira · loading model")
         statusLine.title = "Status: loading model (1–2 min, longer on first download)…"
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refresh() }
     }
@@ -214,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
     @objc func restartServer() {
         config = Config.load()
         runCtl("restart")
-        statusItem.button?.title = "🟡A"
+        setTray(color: .systemOrange, tooltip: "Mira · restarting")
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refresh() }
     }
 
@@ -231,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
                 contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
                 styleMask: [.titled, .closable, .resizable],
                 backing: .buffered, defer: false)
-            win.title = "Argus Settings"
+            win.title = "Mira Settings"
             win.minSize = NSSize(width: 460, height: 420)
             win.center()
             win.contentView = web
@@ -271,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
         guard let id = sender.representedObject as? String, id != config.model else { return }
         runCtl("use", id)
         config.model = id
-        statusItem.button?.title = "🟡A"
+        setTray(color: .systemOrange, tooltip: "Mira · switching model")
         statusLine.title = "Status: switching model…"
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refresh() }
     }
@@ -355,13 +369,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKScript
                     for item in self.modelMenu.items {
                         item.state = (item.representedObject as? String) == activeModel ? .on : .off
                     }
-                    self.statusItem.button?.title = "🟢A"
+                    self.setTray(color: .systemGreen, tooltip: "Mira · ready")
                     self.statusLine.title = "Status: ready — \(self.apiURL)"
                 } else if alive {
-                    self.statusItem.button?.title = "🟡A"
+                    self.setTray(color: .systemOrange, tooltip: "Mira · loading model")
                     self.statusLine.title = "Status: busy or loading model…"
                 } else {
-                    self.statusItem.button?.title = "⚪️A"
+                    self.setTray(symbol: "eye.slash", tooltip: "Mira · not running")
                     self.statusLine.title = "Status: not running"
                 }
                 self.startItem.isEnabled = !(ready || alive)

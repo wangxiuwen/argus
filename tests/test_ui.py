@@ -1,4 +1,5 @@
 import importlib.util
+import io
 from pathlib import Path
 import os
 import subprocess
@@ -11,6 +12,35 @@ SPEC = importlib.util.spec_from_file_location(
     "argus_ui", Path(__file__).parents[1] / "share" / "ui.py")
 ui = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ui)
+
+
+class Response(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.close()
+
+
+class MediaDownloadTests(unittest.TestCase):
+    def test_download_copies_a_local_video_into_downloads_and_reveals_it(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch.object(ui, "DOWNLOAD_DIR", Path(temp)), \
+                mock.patch.object(ui.urllib.request, "urlopen",
+                                  return_value=Response(b"video")) as get, \
+                mock.patch.object(ui.subprocess, "Popen") as launch:
+            destination = ui.download_media(
+                "video", "http://127.0.0.1:9877/outputs/result.mp4")
+            self.assertEqual(destination.name, "result.mp4")
+            self.assertEqual(destination.read_bytes(), b"video")
+            self.assertEqual(get.call_args.args[0],
+                             "http://127.0.0.1:9877/outputs/result.mp4")
+            self.assertEqual(launch.call_args.args[0][:2], ["open", "-R"])
+
+    def test_download_rejects_external_and_wrong_extension_urls(self):
+        for value in ("https://evil.example/result.mp4", "/outputs/result.txt"):
+            with self.assertRaises(ValueError):
+                ui.media_download_url("video", value)
 
 
 class ConfigTests(unittest.TestCase):

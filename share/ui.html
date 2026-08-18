@@ -129,6 +129,13 @@
   .media-card .media-title { font-weight: 600; margin-bottom: 7px; }
   .media-progress { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12.5px; }
   .media-progress progress { width: 150px; accent-color: #7c3aed; }
+  .media-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .media-download {
+    border: 1px solid var(--border); border-radius: 9px; padding: 6px 11px;
+    background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .media-download:hover { background: var(--hover); }
+  .media-download:disabled { color: var(--muted); cursor: default; }
   .bubble details { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
   .bubble details pre { white-space: pre-wrap; margin: 4px 0 0; font: inherit; }
   .meta { display: block; color: var(--muted); font-size: 11.5px; margin-top: 7px; }
@@ -648,6 +655,17 @@ function renderMedia(container, record) {
   if (record.kind === "image") { const el=document.createElement("img"); el.className="generated-image"; el.src=record.url; container.append(el); }
   if (record.kind === "music") { const el=document.createElement("audio"); el.controls=true; el.preload="metadata"; el.src=record.url; container.append(el); }
   if (record.kind === "video") { const el=document.createElement("video"); el.controls=true; el.preload="metadata"; el.src=record.url; container.append(el); }
+  const actions=document.createElement("div"); actions.className="media-actions";
+  const download=document.createElement("button"); download.className="media-download";
+  download.textContent="下载到“下载/Mira”";
+  download.onclick=async()=>{
+    download.disabled=true; download.textContent="正在保存…";
+    try {
+      const result=await mediaJson("/mira/media/download", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:record.kind,url:record.url})});
+      download.textContent="已保存并在 Finder 中显示"; download.title=result.path;
+    } catch(e) { download.disabled=false; download.textContent=`下载失败：${e.message}`; }
+  };
+  actions.append(download); container.append(actions);
 }
 
 /* ---------- model picker ---------- */

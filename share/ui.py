@@ -7,8 +7,10 @@ mlx-vlm server. SSE streaming responses are forwarded line by line.
 import http.server
 import json
 import os
+import pathlib
 import re
 import shlex
+import shutil
 import socketserver
 import subprocess
 import sys
@@ -31,12 +33,58 @@ SERVER_LOG = os.path.expanduser("~/Library/Logs/argus.log")
 VIDEO_SERVER = os.path.join(HERE, "video.py")
 MUSIC_SERVER = os.path.join(HERE, "music.py")
 IMAGE_SERVER = os.path.join(HERE, "image.py")
+DOWNLOAD_DIR = pathlib.Path.home() / "Downloads" / "Mira"
+MEDIA_BASES = {"video": VIDEO_API, "music": MUSIC_API, "image": IMAGE_API}
+MEDIA_SUFFIXES = {"video": ".mp4", "music": ".wav", "image": ".png"}
 
 VARIANTS = [
     {"name": "Qwen3.8-27B bf16", "id": "mlx-community/Qwen3.8-27B-bf16", "gb": 54.7},
     {"name": "Qwen3.8-27B 8bit", "id": "mlx-community/Qwen3.8-27B-8bit", "gb": 29.5},
     {"name": "Qwen3.8-27B 4bit", "id": "mlx-community/Qwen3.8-27B-4bit", "gb": 16.1},
 ]
+
+
+def media_download_url(kind, value):
+    """Resolve only files served by Mira's own loopback media services."""
+    base = MEDIA_BASES.get(kind)
+    if not base or not isinstance(value, str):
+        raise ValueError("invalid media download")
+    parsed = urllib.parse.urlsplit(value)
+    expected = urllib.parse.urlsplit(base)
+    if parsed.scheme or parsed.netloc:
+        if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
+            raise ValueError("media URL is not a Mira local file")
+    path = urllib.parse.unquote(parsed.path)
+    name = os.path.basename(path)
+    if (not name or name != path.rsplit("/", 1)[-1]
+            or pathlib.Path(name).suffix.lower() != MEDIA_SUFFIXES[kind]
+            or not path.startswith(("/outputs/", "/files/"))):
+        raise ValueError("invalid media filename")
+    return base + urllib.parse.quote(path, safe="/"), name
+
+
+def download_media(kind, value):
+    source, name = media_download_url(kind, value)
+    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    destination = DOWNLOAD_DIR / name
+    stem, suffix, serial = destination.stem, destination.suffix, 2
+    while destination.exists():
+        destination = DOWNLOAD_DIR / f"{stem}-{serial}{suffix}"
+        serial += 1
+    fd, temporary = tempfile.mkstemp(prefix=".mira-", dir=DOWNLOAD_DIR)
+    try:
+        with os.fdopen(fd, "wb") as output, urllib.request.urlopen(source, timeout=1900) as media:
+            shutil.copyfileobj(media, output, length=1024 * 1024)
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+    subprocess.Popen(["open", "-R", str(destination)],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return destination
 
 
 def repo_dir(repo):
@@ -718,6 +766,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             subprocess.Popen(["open", os.path.expanduser("~/Library/Logs/argus.log")],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._send_json({"ok": True})
+        elif self.path == "/mira/media/download":
+            try:
+                body = self._read_json()
+                destination = download_media(body.get("kind"), body.get("url"))
+            except (ValueError, OSError, urllib.error.URLError) as e:
+                return self._send_json({"error": str(e)}, 400)
+            self._send_json({"ok": True, "path": str(destination),
+                             "folder": str(DOWNLOAD_DIR)})
         elif self.path in ("/mira/video/prepare", "/mira/video/generate", "/mira/video/cancel"):
             try:
                 length = int(self.headers.get("Content-Length", 0))

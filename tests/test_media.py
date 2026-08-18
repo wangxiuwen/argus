@@ -58,6 +58,13 @@ class UnifiedConversationTests(unittest.TestCase):
         self.assertIn('e.key === "Enter" && (e.metaKey || e.ctrlKey)', html)
         self.assertNotIn('e.key === "Enter" && !e.shiftKey', html)
 
+    def test_running_media_reconnects_instead_of_asking_for_resubmission(self):
+        html = (ROOT / "share" / "ui.html").read_text()
+        self.assertIn('m.status === "running") resumeMedia(m, card)', html)
+        self.assertIn("record.jobId = accepted.job_id", html)
+        self.assertIn("正在重新连接后台生成任务", html)
+        self.assertNotIn("请重新提交这一条任务", html)
+
 
 if __name__ == "__main__":
     unittest.main()

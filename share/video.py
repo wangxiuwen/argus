@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import http.server, json, os, pathlib, subprocess, threading, time, urllib.parse
+import http.server, json, os, pathlib, subprocess, threading, time, urllib.parse, uuid
 
 HERE = pathlib.Path(__file__).parent
 BUNDLE = pathlib.Path(os.environ.get("MIRA_BUNDLE", HERE))
@@ -23,7 +23,7 @@ SOURCE_MODEL_FILES = {
     "vae/minimax_h3_video_vae_fp16.safetensors": 5207808496,
 }
 state = {"process": None, "stage": "idle", "error": None, "output": None,
-         "cancel_requested": False}
+         "cancel_requested": False, "job_id": None}
 lock = threading.Lock()
 
 def model_ready():
@@ -109,11 +109,11 @@ def generation_spec(prompt, width, height, frames, steps, seed, output):
     set_stage(spec, "save-video", output_url=str(output))
     return spec
 
-def run_commands(stage, commands, output=None, attempts=1):
+def run_commands(stage, commands, output=None, attempts=1, job_id=None):
     def worker():
         WORK.mkdir(parents=True, exist_ok=True); OUTPUTS.mkdir(parents=True, exist_ok=True)
         with lock: state.update(stage=stage, error=None, output=str(output) if output else None,
-                                cancel_requested=False)
+                                cancel_requested=False, job_id=job_id)
         try:
             with LOG.open("ab", buffering=0) as log:
                 for attempt in range(1, attempts + 1):
@@ -229,8 +229,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             spec=generation_spec(prompt,int(d.get("width",960)),int(d.get("height",544)),
                  int(d.get("frames",120)),int(d.get("steps",6)),int(d.get("seed",6)),out)
             job=write_job(spec,"latest-generate.vpipeline")
-            run_commands("generating", [[str(ENGINE),"--launch",str(job)]], out)
-            self.send({"ok":True,"output":str(out)},202)
+            job_id=uuid.uuid4().hex
+            run_commands("generating", [[str(ENGINE),"--launch",str(job)]], out, job_id=job_id)
+            self.send({"ok":True,"output":str(out),"job_id":job_id},202)
         elif self.path == "/api/cancel":
             with lock:
                 state["cancel_requested"] = True

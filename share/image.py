@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL = "Runpod/FLUX.2-klein-4B-mflux-4bit"
@@ -24,7 +25,8 @@ READY_MARKER = MODEL_DIR / ".mira-ready"
 OUT = pathlib.Path.home() / "Pictures" / "Mira"
 PORT = int(os.environ.get("MIRA_IMAGE_PORT", "9880"))
 OUT.mkdir(parents=True, exist_ok=True)
-state = {"stage": "idle", "error": None, "output": None, "progress": None}
+state = {"stage": "idle", "error": None, "output": None, "progress": None,
+         "job_id": None}
 lock = threading.Lock()
 
 
@@ -218,10 +220,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/generate":
             if not model_ready():
                 return self.send_json({"error": "图片模型尚未准备"}, 409)
+            job_id = uuid.uuid4().hex
             with lock:
-                state.update(stage="generating", error=None, output=None, progress=None)
+                state.update(stage="generating", error=None, output=None, progress=None,
+                             job_id=job_id)
             generate(body)
-            return self.send_json({"ok": True}, 202)
+            return self.send_json({"ok": True, "job_id": job_id}, 202)
         self.send_json({}, 404)
 
 

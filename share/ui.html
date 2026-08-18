@@ -148,16 +148,18 @@
   }
   #input {
     width: 100%; border: none; background: none; color: var(--text); font: inherit;
-    resize: none; outline: none; max-height: 200px; padding: 2px 4px 6px;
+    resize: none; outline: none; min-height: 42px; max-height: 200px; padding: 3px 4px 10px;
   }
   #input::placeholder { color: var(--muted); }
-  #tools { display: flex; align-items: center; gap: 8px; }
+  #tools { display: flex; align-items: center; gap: 7px; min-width: 0; }
   #modeSelect, .gen-option {
     height: 30px; border: 0; border-radius: 15px; background: var(--hover); color: var(--text);
     padding: 0 10px; font: inherit; font-size: 13px;
   }
-  #genOptions { display: none; gap: 8px; align-items: center; padding: 2px 3px 8px; }
+  #genOptions { display: none; gap: 7px; align-items: center; min-width: 0; flex: 1; }
   #genOptions.show { display: flex; }
+  #modeHint { overflow: hidden; text-overflow: ellipsis; }
+  .send-shortcut { margin-left: auto; }
   #lyrics { display: none; width: 100%; min-height: 74px; resize: vertical; border: 0; border-top: 1px solid var(--border); outline: 0; background: transparent; color: var(--text); font: inherit; padding: 8px 4px 5px; }
   #lyrics.show { display: block; }
   .round {
@@ -206,6 +208,11 @@
     color: var(--send-text); font-size: 14px; cursor: pointer; flex: none;
   }
   #send:disabled { opacity: .35; cursor: default; }
+  @media (max-width: 760px) {
+    #composer { padding-left: 12px; padding-right: 12px; }
+    #modeHint, .send-shortcut { display: none; }
+    #pickerBtn { max-width: 180px; }
+  }
   /* waiting indicator: pulsing dots + elapsed seconds until the first token lands */
   .waiting { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
   .dots { display: inline-flex; gap: 4px; }
@@ -280,23 +287,23 @@
       <div id="thumbs"></div>
       <textarea id="input" rows="1" placeholder="发送消息…"></textarea>
       <textarea id="lyrics" placeholder="输入歌词，支持 [verse] / [chorus] 分段…"></textarea>
-      <div id="genOptions">
-        <select id="imageSize" class="gen-option"><option value="1024x1024">1024×1024</option><option value="1344x768">1344×768</option><option value="768x1344">768×1344</option></select>
-        <select id="videoSize" class="gen-option"><option value="960x544">960×544</option><option value="512x288">512×288</option></select>
-        <select id="videoFrames" class="gen-option"><option value="120">5 秒</option><option value="22">1 秒</option></select>
-        <select id="musicDuration" class="gen-option"><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">120 秒</option></select>
-        <span id="modeHint" class="shortcut"></span>
-      </div>
       <div id="tools">
         <button class="round" id="attach" title="Attach image">＋</button>
         <input type="file" id="file" accept="image/*" multiple hidden>
         <select id="modeSelect" title="这条消息要生成什么"><option value="chat">对话</option><option value="image">图片</option><option value="music">音乐</option><option value="video">视频</option></select>
+        <div id="genOptions">
+          <select id="imageSize" class="gen-option"><option value="1024x1024">1024×1024</option><option value="1344x768">1344×768</option><option value="768x1344">768×1344</option></select>
+          <select id="videoSize" class="gen-option"><option value="960x544">960×544</option><option value="512x288">512×288</option></select>
+          <select id="videoFrames" class="gen-option"><option value="120">5 秒</option><option value="22">1 秒</option></select>
+          <select id="musicDuration" class="gen-option"><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">120 秒</option></select>
+          <span id="modeHint" class="shortcut"></span>
+        </div>
         <button id="think" title="Let the model think before answering">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
             stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2a4.3 4.3 0 0 0-4.3 4.3c0 1.2.5 2.2 1.3 3 .5.5.8 1.1.8 1.8v.7h4.4v-.7c0-.7.3-1.3.8-1.8a4.2 4.2 0 0 0 1.3-3A4.3 4.3 0 0 0 10 3.2z"/><line x1="8.2" y1="16.4" x2="11.8" y2="16.4"/></svg>
           Think
         </button>
-        <span class="shortcut">Enter 换行 · ⌘↵ 发送</span>
+        <span class="shortcut send-shortcut">Enter 换行 · ⌘↵ 发送</span>
         <div id="picker">
           <button id="pickerBtn"><span class="name">Select a model</span><span class="caret">▾</span></button>
           <div id="menu">
@@ -448,7 +455,8 @@ function openChat(id) {
     if (m.kind) {
       const card = document.createElement("div"); card.className = "media-card"; b.append(card);
       if (m.status === "complete") renderMedia(card, m);
-      else card.textContent = m.error ? `生成失败：${m.error}` : "上次关闭界面时仍在生成；请重新提交这一条任务。";
+      else if (m.status === "running") resumeMedia(m, card);
+      else card.textContent = `生成失败：${m.error || "任务未完成"}`;
     }
   }
   renderChats();
@@ -560,40 +568,52 @@ function mediaPost(kind, action, body={}) {
 }
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function runMedia(mode, prompt, record, bubbleEl) {
-  const started = Date.now();
-  const card = document.createElement("div"); card.className = "media-card";
+async function runMedia(mode, prompt, record, bubbleEl, resume=false) {
+  const started = record.startedAt || Date.now();
+  record.startedAt = started;
+  const card = resume ? bubbleEl : document.createElement("div");
+  card.className = "media-card";
+  card.innerHTML = "";
   const title = document.createElement("div"); title.className = "media-title";
-  title.textContent = ({image:"正在生成图片", music:"正在生成音乐", video:"正在生成视频"})[mode];
+  title.textContent = resume ? "正在恢复生成任务" : ({image:"正在生成图片", music:"正在生成音乐", video:"正在生成视频"})[mode];
   const progress = document.createElement("div"); progress.className = "media-progress";
   const bar = document.createElement("progress"); const label = document.createElement("span");
-  bar.removeAttribute("value"); label.textContent = "正在启动本地模型…"; progress.append(bar,label); card.append(title,progress); bubbleEl.append(card);
+  bar.removeAttribute("value"); label.textContent = "正在启动本地模型…"; progress.append(bar,label); card.append(title,progress);
+  if (!resume) bubbleEl.append(card);
   try {
-    let payload;
-    if (mode === "image") payload = {prompt, size:$("imageSize").value, steps:4};
-    if (mode === "music") payload = {prompt, lyrics:$("lyrics").value.trim(), duration_seconds:+$("musicDuration").value};
-    if (mode === "video") {
-      const [width,height] = $("videoSize").value.split("x").map(Number);
-      payload = {prompt,width,height,frames:+$("videoFrames").value,steps:6,seed:6};
-    }
-    try { await mediaPost(mode, "generate", payload); }
-    catch (e) {
-      if (!/not prepared|尚未准备/i.test(e.message)) throw e;
-      label.textContent = "首次使用，正在下载模型…";
-      await mediaPost(mode, "prepare", {accept_license:true});
-      for (;;) {
-        const s = await mediaJson(`/mira/${mode}/status`);
-        if (s.error) throw Error(s.error);
-        if (s.model_ready && !s.running) break;
-        if (s.download?.percent != null) { bar.value=s.download.percent; bar.max=100; label.textContent=`下载模型 ${s.download.percent}%`; }
-        await delay(2000);
+    if (!resume) {
+      let payload;
+      if (mode === "image") payload = {prompt, size:$("imageSize").value, steps:4};
+      if (mode === "music") payload = {prompt, lyrics:$("lyrics").value.trim(), duration_seconds:+$("musicDuration").value};
+      if (mode === "video") {
+        const [width,height] = $("videoSize").value.split("x").map(Number);
+        payload = {prompt,width,height,frames:+$("videoFrames").value,steps:6,seed:6};
       }
-      bar.removeAttribute("value");
-      await mediaPost(mode, "generate", payload);
+      try {
+        const accepted = await mediaPost(mode, "generate", payload);
+        record.jobId = accepted.job_id;
+      } catch (e) {
+        if (!/not prepared|尚未准备/i.test(e.message)) throw e;
+        label.textContent = "首次使用，正在下载模型…";
+        await mediaPost(mode, "prepare", {accept_license:true});
+        for (;;) {
+          const s = await mediaJson(`/mira/${mode}/status`);
+          if (s.error) throw Error(s.error);
+          if (s.model_ready && !s.running) break;
+          if (s.download?.percent != null) { bar.value=s.download.percent; bar.max=100; label.textContent=`下载模型 ${s.download.percent}%`; }
+          await delay(2000);
+        }
+        bar.removeAttribute("value");
+        const accepted = await mediaPost(mode, "generate", payload);
+        record.jobId = accepted.job_id;
+      }
+      saveChats();
     }
     for (;;) {
       const s = await mediaJson(`/mira/${mode}/status`);
       if (s.error) throw Error(s.error);
+      if (record.jobId && s.job_id && record.jobId !== s.job_id) throw Error("该生成任务已被另一项任务替换");
+      if (!record.jobId && s.job_id) { record.jobId = s.job_id; saveChats(); }
       if (s.progress?.total) { bar.max=s.progress.total; bar.value=s.progress.step; }
       label.textContent = `${s.stage === "generating" ? "正在生成" : "正在处理"}… ${Math.round((Date.now()-started)/1000)} 秒`;
       if (!s.running) {
@@ -605,14 +625,19 @@ async function runMedia(mode, prompt, record, bubbleEl) {
         if (!output) throw Error("任务结束，但没有找到输出文件");
         record.url = output.startsWith("http") ? output : `http://127.0.0.1:${mode === "video" ? 9877 : mode === "music" ? 9879 : 9880}${output}`;
         record.status = "complete"; record.elapsed = Math.round((Date.now()-started)/1000);
-        persistCurrent(); renderMedia(card, record); return;
+        saveChats(); renderChats(); renderMedia(card, record); return;
       }
       await delay(2000);
     }
   } catch (e) {
-    record.status = "failed"; record.error = e.message; persistCurrent();
+    record.status = "failed"; record.error = e.message; saveChats(); renderChats();
     card.textContent = `生成失败：${e.message}`; card.classList.add("notice");
   }
+}
+
+function resumeMedia(record, card) {
+  card.textContent = "正在重新连接后台生成任务…";
+  runMedia(record.kind, record.prompt || "", record, card, true);
 }
 
 function renderMedia(container, record) {

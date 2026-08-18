@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import urllib.request
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL = "ddalcu/MiniMax-Music3-MLX-Serve-8bit"
@@ -22,7 +23,8 @@ LEGACY_OUT = pathlib.Path.home() / "Music" / "minimax3"
 OUT = str(LEGACY_OUT if LEGACY_OUT.exists() else pathlib.Path.home() / "Music" / "Mira")
 PORT = int(os.environ.get("MIRA_MUSIC_PORT", "9879"))
 os.makedirs(OUT, exist_ok=True)
-state = {"stage": "idle", "error": None, "output": None, "progress": None}
+state = {"stage": "idle", "error": None, "output": None, "progress": None,
+         "job_id": None}
 lock = threading.Lock()
 
 
@@ -247,12 +249,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(400, b'{"error":"invalid JSON"}')
         if not model_ready():
             return self._send(409, b'{"error":"model not prepared"}')
+        job_id = uuid.uuid4().hex
         with lock:
             if state["stage"] in ("preparing", "generating"):
                 return self._send(409, b'{"error":"busy"}')
-            state.update(stage="generating", error=None, output=None, progress=None)
+            state.update(stage="generating", error=None, output=None, progress=None,
+                         job_id=job_id)
         generate_music(body)
-        self._send(202, b'{"ok":true}')
+        self._send(202, json.dumps({"ok": True, "job_id": job_id}).encode())
 
 
 if __name__ == "__main__":

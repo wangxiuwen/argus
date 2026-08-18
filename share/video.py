@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
-import http.server, json, os, pathlib, subprocess, threading, time, urllib.parse, uuid
+import http.server, json, os, pathlib, shutil, subprocess, threading, time, urllib.parse, uuid
 
 HERE = pathlib.Path(__file__).parent
 BUNDLE = pathlib.Path(os.environ.get("MIRA_BUNDLE", HERE))
 PORT = int(os.environ.get("MIRA_VIDEO_PORT", "9877"))
-LEGACY_WORK = pathlib.Path.home() / "H3 Studio"
-DEFAULT_WORK = LEGACY_WORK if LEGACY_WORK.exists() else pathlib.Path.home() / "Mira"
+DEFAULT_WORK = pathlib.Path.home() / "Library" / "Application Support" / "Mira" / "video"
 WORK = pathlib.Path(os.environ.get("MIRA_VIDEO_WORK", DEFAULT_WORK))
-MODELS = WORK / "models" / "local" / "MiniMax-H3-FL2VA-4bit"
+HF_HOME = pathlib.Path(os.environ.get("HF_HOME", pathlib.Path.home() / ".cache" / "huggingface"))
+HF_HUB = pathlib.Path(os.environ.get("HF_HUB_CACHE", HF_HOME / "hub"))
+MODEL_LINKS = WORK / "models"
+DERIVED_MODELS = HF_HUB / "mira-vpipe" / "local"
+MODELS = DERIVED_MODELS / "MiniMax-H3-FL2VA-4bit"
 OUTPUTS = WORK / "outputs"
-LOG = WORK / "h3-studio.log"
-EXTERNAL_DOWNLOAD_LOCK = WORK / ".external-download"
+LOG = WORK / "video.log"
 ENGINE = pathlib.Path(os.environ.get(
     "MIRA_VPIPE", BUNDLE / "Contents" / "Helpers" / "vpipe"))
 PIPELINES = pathlib.Path(os.environ.get(
     "MIRA_VIDEO_PIPELINES", BUNDLE / "Contents" / "Resources" / "video-pipelines"))
-SOURCE_MODEL_ROOT = WORK / "models" / "Comfy-Org" / "MiniMax-H3"
+SOURCE_REPO = "Comfy-Org/MiniMax-H3"
+LORA_REPO = "larryvrh/MiniMax-H3-Turbo-Lora"
 SOURCE_MODEL_FILES = {
     "diffusion_models/minimax_h3_fl2va_bf16.safetensors": 66280487368,
     "text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors": 51506295256,
     "vae/minimax_h3_audio_vae_fp32.safetensors": 605254808,
     "vae/minimax_h3_video_vae_fp16.safetensors": 5207808496,
 }
+LORA_FILES = ["minimax_h3_turbo_v4_step600_ema.safetensors"]
 state = {"process": None, "stage": "idle", "error": None, "output": None,
          "cancel_requested": False, "job_id": None}
 lock = threading.Lock()
@@ -29,11 +33,60 @@ lock = threading.Lock()
 def model_ready():
     return MODELS.is_dir() and sum(p.stat().st_size for p in MODELS.rglob("*") if p.is_file()) > 30e9
 
+def repo_cache(repo):
+    return HF_HUB / ("models--" + repo.replace("/", "--"))
+
+def ensure_model_layout():
+    """Keep task data in Application Support and model bytes in the HF cache."""
+    MODEL_LINKS.mkdir(parents=True, exist_ok=True)
+    DERIVED_MODELS.mkdir(parents=True, exist_ok=True)
+    local = MODEL_LINKS / "local"
+    if not local.exists() and not local.is_symlink():
+        local.symlink_to(DERIVED_MODELS, target_is_directory=True)
+
+def link_snapshot(repo, snapshot):
+    snapshot = pathlib.Path(snapshot).resolve()
+    expected = repo_cache(repo).resolve()
+    if expected not in snapshot.parents:
+        raise RuntimeError(f"hf returned a snapshot outside its cache: {snapshot}")
+    destination = MODEL_LINKS.joinpath(*repo.split("/"))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.is_symlink():
+        destination.unlink()
+    elif destination.exists():
+        raise RuntimeError(f"model link path is occupied: {destination}")
+    destination.symlink_to(snapshot, target_is_directory=True)
+
+def hf_command(repo, files, token=""):
+    executable = os.environ.get("MIRA_HF") or shutil.which("hf")
+    if not executable:
+        raise RuntimeError("Hugging Face CLI is required: pip install huggingface_hub")
+    command = [executable, "download", repo, *files, "--cache-dir", str(HF_HUB),
+               "--max-workers", "4", "--quiet"]
+    if token:
+        command.extend(["--token", token])
+    return command
+
+def download_repo(repo, files, token, log):
+    command = hf_command(repo, files, token)
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=log, text=True)
+    with lock: state["process"] = proc
+    output, _ = proc.communicate()
+    with lock: cancelled = state["cancel_requested"]
+    if cancelled:
+        raise InterruptedError("cancelled")
+    if proc.returncode:
+        raise RuntimeError(f"hf download failed with exit code {proc.returncode}")
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError("hf download did not return a snapshot path")
+    link_snapshot(repo, lines[-1])
+
 def external_download_active():
-    candidates = [EXTERNAL_DOWNLOAD_LOCK]
-    model_root = WORK / "models"
-    if model_root.exists():
-        candidates.extend(model_root.rglob("*.aria2"))
+    candidates = []
+    for root in (repo_cache(SOURCE_REPO), repo_cache(LORA_REPO)):
+        if root.exists():
+            candidates.extend(root.rglob("*.incomplete"))
     cutoff = time.time() - 180
     for path in candidates:
         try:
@@ -45,22 +98,11 @@ def external_download_active():
 
 def download_progress():
     total = sum(SOURCE_MODEL_FILES.values())
-    downloaded = 0
-    complete = 0
-    for relative, expected in SOURCE_MODEL_FILES.items():
-        path = SOURCE_MODEL_ROOT / relative
-        try:
-            stat = path.stat()
-            marker = pathlib.Path(str(path) + ".aria2")
-            if not marker.exists() and stat.st_size == expected:
-                current = expected
-                complete += 1
-            else:
-                allocated = getattr(stat, "st_blocks", 0) * 512
-                current = min(expected, stat.st_size, allocated)
-            downloaded += current
-        except OSError:
-            pass
+    blobs = repo_cache(SOURCE_REPO) / "blobs"
+    files = [path for path in blobs.iterdir() if path.is_file()] if blobs.exists() else []
+    downloaded = min(total, sum(path.stat().st_size for path in files))
+    complete = 0 if any(path.name.endswith(".incomplete") for path in files) else min(
+        len(SOURCE_MODEL_FILES), len(files))
     return {"downloaded_bytes": downloaded, "total_bytes": total,
             "percent": round(downloaded * 100 / total, 1),
             "files_complete": complete, "files_total": len(SOURCE_MODEL_FILES)}
@@ -73,8 +115,10 @@ def status():
         idle_stage = "external_downloading" if external else ("ready" if model_ready() else "not_prepared")
         return {"stage": state["stage"] if running else idle_stage,
                 "running": running, "model_ready": model_ready(), "error": state["error"],
-                "external_download": external, "download": download_progress() if external else None,
-                "output": state["output"], "work_dir": str(WORK)}
+                "external_download": external,
+                "download": download_progress() if external or state["stage"] == "preparing" else None,
+                "output": state["output"], "work_dir": str(WORK),
+                "model_cache": str(HF_HUB)}
 
 def output_items():
     if not OUTPUTS.exists():
@@ -109,13 +153,16 @@ def generation_spec(prompt, width, height, frames, steps, seed, output):
     set_stage(spec, "save-video", output_url=str(output))
     return spec
 
-def run_commands(stage, commands, output=None, attempts=1, job_id=None):
+def run_commands(stage, commands, output=None, attempts=1, job_id=None, downloads=()):
     def worker():
         WORK.mkdir(parents=True, exist_ok=True); OUTPUTS.mkdir(parents=True, exist_ok=True)
         with lock: state.update(stage=stage, error=None, output=str(output) if output else None,
                                 cancel_requested=False, job_id=job_id)
         try:
             with LOG.open("ab", buffering=0) as log:
+                ensure_model_layout()
+                for repo, files, token in downloads:
+                    download_repo(repo, files, token, log)
                 for attempt in range(1, attempts + 1):
                     code = 0
                     for command in commands:
@@ -217,7 +264,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             base_path = write_job(base, "prepare-h3.vpipeline")
             lora = PIPELINES / "prepare-minimax-h3-turbo-lora.vpipeline"
             run_commands("preparing", [[str(ENGINE), "--launch", str(base_path)],
-                                        [str(ENGINE), "--launch", str(lora)]], attempts=20)
+                                        [str(ENGINE), "--launch", str(lora)]], attempts=20,
+                         downloads=((SOURCE_REPO, tuple(SOURCE_MODEL_FILES), token),
+                                    (LORA_REPO, tuple(LORA_FILES), token)))
             self.send({"ok":True}, 202)
         elif self.path == "/api/generate":
             if status()["running"]: return self.send({"error":"busy"}, 409)
@@ -241,4 +290,5 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     WORK.mkdir(parents=True, exist_ok=True)
+    ensure_model_layout()
     http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

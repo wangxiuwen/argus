@@ -44,6 +44,12 @@ The release bundles pinned, checksum-verified VPIPE and mlx-serve runtimes. Mode
 weights are not redistributed; each media model is fetched from its public model
 repository on first use.
 
+Original media weights use the standard Hugging Face Hub cache at
+`$HF_HOME/hub` (normally `~/.cache/huggingface/hub`) so other compatible tools
+can reuse the same snapshots and interrupted downloads can resume. Mira keeps
+only tasks and outputs in `~/Library/Application Support/Mira`; locally converted
+H3 artifacts live under the same HF cache in `hub/mira-vpipe`.
+
 ## Install
 
 ```bash

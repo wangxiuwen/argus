@@ -24,6 +24,7 @@ API = os.environ.get("ARGUS_API", "http://127.0.0.1:8090")
 VIDEO_API = os.environ.get("MIRA_VIDEO_API", "http://127.0.0.1:9877")
 MUSIC_API = os.environ.get("MIRA_MUSIC_API", "http://127.0.0.1:9879")
 IMAGE_API = os.environ.get("MIRA_IMAGE_API", "http://127.0.0.1:9880")
+JOBS_API = os.environ.get("MIRA_JOBS_API", "http://127.0.0.1:9881")
 PORT = int(os.environ.get("ARGUS_UI_PORT", "8091"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 ARGUS = os.path.expanduser("~/.local/bin/argus")
@@ -33,6 +34,7 @@ SERVER_LOG = os.path.expanduser("~/Library/Logs/argus.log")
 VIDEO_SERVER = os.path.join(HERE, "video.py")
 MUSIC_SERVER = os.path.join(HERE, "music.py")
 IMAGE_SERVER = os.path.join(HERE, "image.py")
+JOBS_SERVER = os.path.join(HERE, "jobs.py")
 DOWNLOAD_DIR = pathlib.Path.home() / "Downloads" / "Mira"
 MEDIA_BASES = {"video": VIDEO_API, "music": MUSIC_API, "image": IMAGE_API}
 MEDIA_SUFFIXES = {"video": ".mp4", "music": ".wav", "image": ".png"}
@@ -507,6 +509,30 @@ def ensure_image_server():
     return False
 
 
+def ensure_jobs_server():
+    try:
+        urllib.request.urlopen(JOBS_API + "/health", timeout=1).read()
+        return True
+    except OSError:
+        pass
+    if not os.path.isfile(JOBS_SERVER):
+        return False
+    # The durable worker talks to these services directly after the browser
+    # request has returned, so make sure they outlive the UI request too.
+    ensure_video_server()
+    ensure_music_server()
+    ensure_image_server()
+    subprocess.Popen([sys.executable, JOBS_SERVER], stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    for _ in range(30):
+        try:
+            urllib.request.urlopen(JOBS_API + "/health", timeout=.5).read()
+            return True
+        except OSError:
+            threading.Event().wait(.1)
+    return False
+
+
 def startup_stage(model):
     """What the server is doing while it is not answering yet.
 
@@ -651,6 +677,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _jobs_proxy(self, endpoint, data=None):
+        if not ensure_jobs_server():
+            return self._send_json({"error": "Mira task service is not available"}, 503)
+        req = urllib.request.Request(JOBS_API + endpoint, data=data)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            upstream = urllib.request.urlopen(req, timeout=1900)
+            body, code = upstream.read(), upstream.status
+        except urllib.error.HTTPError as e:
+            body, code = e.read(), e.code
+        except OSError as e:
+            return self._send_json({"error": f"task service error: {e}"}, 502)
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _send_json(self, obj, code=200):
         body = json.dumps(obj).encode()
         self.send_response(code)
@@ -721,6 +766,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._image_proxy("/api/status")
         elif self.path == "/mira/image/list":
             self._image_proxy("/api/list")
+        elif self.path == "/mira/jobs":
+            self._jobs_proxy("/api/jobs")
+        elif self.path.startswith("/mira/jobs/"):
+            self._jobs_proxy("/api/jobs/" + self.path[len("/mira/jobs/"):])
         elif self.path.startswith("/v1/"):
             self._proxy()
         else:
@@ -774,6 +823,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send_json({"error": str(e)}, 400)
             self._send_json({"ok": True, "path": str(destination),
                              "folder": str(DOWNLOAD_DIR)})
+        elif self.path == "/mira/agent":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send_json({"error": "invalid Content-Length"}, 400)
+            if not 0 <= length <= 50_000_000:
+                return self._send_json({"error": "request body is too large"}, 413)
+            self._jobs_proxy("/api/agent", self.rfile.read(length))
+        elif self.path.startswith("/mira/jobs/"):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send_json({"error": "invalid Content-Length"}, 400)
+            if not 0 <= length <= 1_000_000:
+                return self._send_json({"error": "request body is too large"}, 413)
+            self._jobs_proxy("/api/jobs/" + self.path[len("/mira/jobs/"):], self.rfile.read(length))
         elif self.path in ("/mira/video/prepare", "/mira/video/generate", "/mira/video/cancel"):
             try:
                 length = int(self.headers.get("Content-Length", 0))

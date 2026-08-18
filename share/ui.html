@@ -136,6 +136,13 @@
   }
   .media-download:hover { background: var(--hover); }
   .media-download:disabled { color: var(--muted); cursor: default; }
+  .task-card { width: min(680px,100%); margin-top: 10px; border: 1px solid var(--border); border-radius: 13px; padding: 12px; background: var(--field); }
+  .task-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .task-head .task-state { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; }
+  .task-progress { display: flex; align-items: center; gap: 9px; margin-top: 8px; color: var(--muted); font-size: 12.5px; }
+  .task-progress progress { flex: 1; accent-color: #7c3aed; }
+  .task-actions { display: flex; gap: 7px; margin-top: 9px; }
+  .task-output { margin-top: 9px; }
   .bubble details { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
   .bubble details pre { white-space: pre-wrap; margin: 4px 0 0; font: inherit; }
   .meta { display: block; color: var(--muted); font-size: 11.5px; margin-top: 7px; }
@@ -159,13 +166,11 @@
   }
   #input::placeholder { color: var(--muted); }
   #tools { display: flex; align-items: center; gap: 7px; min-width: 0; }
-  #modeSelect, .gen-option {
-    height: 30px; border: 0; border-radius: 15px; background: var(--hover); color: var(--text);
-    padding: 0 10px; font: inherit; font-size: 13px;
+  .agent-mode {
+    height: 30px; display: inline-flex; align-items: center; border-radius: 15px;
+    background: var(--hover); color: var(--muted); padding: 0 10px; font-size: 13px;
+    white-space: nowrap;
   }
-  #genOptions { display: none; gap: 7px; align-items: center; min-width: 0; flex: 1; }
-  #genOptions.show { display: flex; }
-  #modeHint { overflow: hidden; text-overflow: ellipsis; }
   .send-shortcut { margin-left: auto; }
   #lyrics { display: none; width: 100%; min-height: 74px; resize: vertical; border: 0; border-top: 1px solid var(--border); outline: 0; background: transparent; color: var(--text); font: inherit; padding: 8px 4px 5px; }
   #lyrics.show { display: block; }
@@ -290,18 +295,10 @@
     <div id="card">
       <div id="thumbs"></div>
       <textarea id="input" rows="1" placeholder="发送消息…"></textarea>
-      <textarea id="lyrics" placeholder="输入歌词，支持 [verse] / [chorus] 分段…"></textarea>
       <div id="tools">
         <button class="round" id="attach" title="Attach image">＋</button>
         <input type="file" id="file" accept="image/*" multiple hidden>
-        <select id="modeSelect" title="这条消息要生成什么"><option value="chat">对话</option><option value="image">图片</option><option value="music">音乐</option><option value="video">视频</option></select>
-        <div id="genOptions">
-          <select id="imageSize" class="gen-option"><option value="1024x1024">1024×1024</option><option value="1344x768">1344×768</option><option value="768x1344">768×1344</option></select>
-          <select id="videoSize" class="gen-option"><option value="960x544">960×544</option><option value="512x288">512×288</option></select>
-          <select id="videoFrames" class="gen-option"><option value="120">5 秒</option><option value="22">1 秒</option></select>
-          <select id="musicDuration" class="gen-option"><option value="30">30 秒</option><option value="60">1 分钟</option><option value="120">2 分钟</option><option value="180">3 分钟</option><option value="240">4 分钟</option><option value="360">6 分钟</option></select>
-          <span id="modeHint" class="shortcut"></span>
-        </div>
+        <span class="agent-mode">Agent · 自动选择能力</span>
         <button id="think" title="Let the model think before answering">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
             stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2a4.3 4.3 0 0 0-4.3 4.3c0 1.2.5 2.2 1.3 3 .5.5.8 1.1.8 1.8v.7h4.4v-.7c0-.7.3-1.3.8-1.8a4.2 4.2 0 0 0 1.3-3A4.3 4.3 0 0 0 10 3.2z"/><line x1="8.2" y1="16.4" x2="11.8" y2="16.4"/></svg>
@@ -328,9 +325,8 @@ let ready = false, lastHealth = {};
 
 /* ---------- sidebar + chat history ---------- */
 const HERO = '<div id="hero"><span class="hero-eye"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.8 12s3.5-5.1 9.2-5.1 9.2 5.1 9.2 5.1-3.5 5.1-9.2 5.1S2.8 12 2.8 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,\'image\')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,\'music\')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,\'video\')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>';
-function useSuggestion(button, mode="chat") {
+function useSuggestion(button) {
   const input = $("input"); input.value = button.textContent; input.focus();
-  $("modeSelect").value = mode; paintMode();
   input.dispatchEvent(new Event("input"));
 }
 let chats = [], curId = null;
@@ -462,6 +458,7 @@ function openChat(id) {
       else if (m.status === "running") resumeMedia(m, card);
       else card.textContent = `生成失败：${m.error || "任务未完成"}`;
     }
+    for (const taskId of (m.tasks || [])) renderTaskCard(b, taskId);
   }
   renderChats();
 }
@@ -533,32 +530,6 @@ $("launchBtn").onclick = () => {
   document.body.classList.add("launching");
   $("moduleTitle").textContent = "连接工具";
 };
-
-/* ---------- unified creation modes ---------- */
-const MODE_INFO = {
-  chat:  {placeholder:"发送消息…", hint:"本地对话模型"},
-  image: {placeholder:"描述你想生成的图片…", hint:"FLUX.2-klein · 本地 4-bit"},
-  music: {placeholder:"描述曲风、情绪、速度与人声…", hint:"MiniMax Music 3 · 本地 8-bit"},
-  video: {placeholder:"描述画面、动作、镜头和声音…", hint:"MiniMax H3 · 本地 4-bit"},
-};
-function paintMode() {
-  const mode = $("modeSelect").value;
-  $("input").placeholder = MODE_INFO[mode].placeholder;
-  $("genOptions").classList.toggle("show", mode !== "chat");
-  $("lyrics").classList.toggle("show", mode === "music");
-  $("imageSize").hidden = mode !== "image";
-  $("videoSize").hidden = mode !== "video";
-  $("videoFrames").hidden = mode !== "video";
-  $("musicDuration").hidden = mode !== "music";
-  $("modeHint").textContent = MODE_INFO[mode].hint;
-  $("think").hidden = mode !== "chat";
-  $("picker").hidden = mode !== "chat";
-  $("attach").title = mode === "chat" ? "添加图片" : "添加参考图片";
-}
-$("modeSelect").onchange = paintMode;
-const requestedMode = new URLSearchParams(location.search).get("mode");
-if (MODE_INFO[requestedMode]) $("modeSelect").value = requestedMode;
-paintMode();
 
 async function mediaJson(url, options) {
   const r = await fetch(url, options);
@@ -662,6 +633,43 @@ function renderMedia(container, record) {
     } catch(e) { download.disabled=false; download.textContent=`下载失败：${e.message}`; }
   };
   actions.append(download); container.append(actions);
+}
+
+const TASK_LABELS={image:"图片",music:"音乐",video:"视频"};
+const TASK_STATES={queued:"排队中",running:"生成中",paused:"已暂停",complete:"已完成",failed:"失败",cancelled:"已取消"};
+async function taskAction(id, action) {
+  await mediaJson(`/mira/jobs/${id}/${action}`, {method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+}
+async function renderTaskCard(parent, id) {
+  const card=document.createElement("div"); card.className="task-card"; parent.append(card);
+  async function refresh(){
+    try {
+      const task=await mediaJson(`/mira/jobs/${id}`);
+      card.innerHTML="";
+      const head=document.createElement("div"); head.className="task-head";
+      head.append(document.createTextNode(`${TASK_LABELS[task.kind] || task.kind}批任务 · ${task.total} 项`));
+      const state=document.createElement("span"); state.className="task-state"; state.textContent=TASK_STATES[task.status] || task.status; head.append(state); card.append(head);
+      const row=document.createElement("div"); row.className="task-progress";
+      const bar=document.createElement("progress"); bar.max=task.total; bar.value=task.completed+task.failed;
+      const count=document.createElement("span"); count.textContent=`${task.completed}/${task.total}`+(task.failed?` · ${task.failed} 失败`:""); row.append(bar,count); card.append(row);
+      const completed=(task.items || []).filter(item=>item.status==="complete" && item.output).slice(-3);
+      for(const item of completed){
+        const out=document.createElement("div"); out.className="task-output"; card.append(out);
+        renderMedia(out,{kind:task.kind,url:item.output});
+      }
+      if(!["complete","failed","cancelled"].includes(task.status)){
+        const actions=document.createElement("div"); actions.className="task-actions";
+        const pause=document.createElement("button"); pause.className="media-download";
+        pause.textContent=task.status==="paused"?"继续":"暂停";
+        pause.onclick=async()=>{await taskAction(id,task.status==="paused"?"resume":"pause");refresh();};
+        const cancel=document.createElement("button"); cancel.className="media-download"; cancel.textContent="取消剩余任务";
+        cancel.onclick=async()=>{await taskAction(id,"cancel");refresh();};
+        actions.append(pause,cancel); card.append(actions);
+        setTimeout(refresh,3000);
+      }
+    } catch(e) { card.textContent=`任务状态读取失败：${e.message}`; }
+  }
+  refresh();
 }
 
 /* ---------- model picker ---------- */
@@ -878,8 +886,6 @@ async function sendMedia(mode, text) {
 
 async function send() {
   const text = $("input").value.trim();
-  const mode = $("modeSelect").value;
-  if (mode !== "chat") return sendMedia(mode, text);
   if (busy || (!text && !images.length) || !model) return;
   // don't fire into a server that is still downloading or loading — say what it's doing
   if (!ready) {
@@ -904,12 +910,7 @@ async function send() {
   messages.push({role: "user", content});
   persistCurrent();
   const b = bubble("bot", "");
-  // always ask for the model the server has loaded: mlx_vlm.server treats a
-  // different name as "unload and load that instead", which stalls for minutes
-  const serving = lastHealth.model || model;
   const apiMessages = messages.filter(m => !m.kind && !m.mode).map(m => ({role:m.role, content:m.content}));
-
-  // show pulsing dots + elapsed time until the first token arrives, and let Stop cancel
   const wait = document.createElement("span");
   wait.className = "waiting";
   wait.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="secs">0s</span>';
@@ -920,95 +921,34 @@ async function send() {
     if (el) el.textContent = Math.round((Date.now() - t0) / 1000) + "s";
   }, 250);
   const stopWaiting = () => { clearInterval(tick); wait.remove(); };
-
-  lastTps = 0;
-  let ttft = 0;
-  const ctl = new AbortController();
-  $("send").textContent = "■";
-  $("send").title = "Stop";
-  $("send").disabled = false;
-  $("send").onclick = () => ctl.abort();
-
-  let answer = "", reasoning = "", reasonPre = null;
   try {
-    const resp = await fetch("/v1/chat/completions", {
+    const resp = await fetch("/mira/agent", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({model: serving, messages: apiMessages, stream: true,
-        max_tokens: lastHealth.max_tokens || 4096,
-        enable_thinking: thinking}),
-      signal: ctl.signal,
+      body: JSON.stringify({messages: apiMessages, enable_thinking: thinking}),
     });
     if (!resp.ok) {
       const failure = await resp.json();
-      const detail = typeof failure.error === "string" ? failure.error : failure.error?.message;
-      throw new Error(detail || `HTTP ${resp.status}`);
+      throw new Error(failure.error || `HTTP ${resp.status}`);
     }
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, {stream: true});
-      const lines = buf.split("\n");
-      buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const data = line.slice(5).trim();
-        if (data === "[DONE]") continue;
-        const chunk = JSON.parse(data);
-        if (chunk.timings?.predicted_per_second) lastTps = chunk.timings.predicted_per_second;
-        const delta = chunk.choices[0].delta || {};
-        if (delta.reasoning_content || delta.content) {
-          if (!ttft) ttft = (Date.now() - t0) / 1000;
-          stopWaiting();
-        }
-        if (delta.reasoning_content) {
-          reasoning += delta.reasoning_content;
-          if (!reasonPre) {
-            const det = document.createElement("details");
-            det.innerHTML = "<summary>thinking…</summary>";
-            reasonPre = document.createElement("pre");
-            det.append(reasonPre);
-            b.prepend(det);
-          }
-          reasonPre.textContent = reasoning;
-        }
-        if (delta.content) { answer += delta.content; b.lastChild.textContent = answer; }
-      }
-      $("log").scrollTop = $("log").scrollHeight;
-    }
-    messages.push({role: "assistant", content: answer});
+    const result = await resp.json();
+    stopWaiting();
+    const record={role:"assistant",content:result.content || "任务已处理。",tasks:result.tasks || []};
+    b.append(document.createTextNode(record.content));
+    for(const taskId of record.tasks) renderTaskCard(b,taskId);
+    messages.push(record);
     persistCurrent();
     const meta = document.createElement("span");
     meta.className = "meta";
-    meta.textContent = [
-      lastTps ? `${lastTps.toFixed(1)} tok/s` : null,
-      ttft ? `first token ${ttft.toFixed(1)}s` : null,
-      `${((Date.now() - t0) / 1000).toFixed(1)}s total`,
-    ].filter(Boolean).join("  ·  ");
+    meta.textContent = `Agent · ${((Date.now() - t0) / 1000).toFixed(1)}s`;
     b.append(meta);
   } catch (err) {
-    if (err.name === "AbortError") {
-      if (answer) {
-        messages.push({role: "assistant", content: answer});
-        b.append(document.createTextNode("  (stopped)"));
-      } else {
-        b.lastChild.textContent = "(stopped)";
-        messages.pop();
-      }
-    } else {
-      b.lastChild.textContent = "⚠ " + err.message;
-      messages.pop();
-    }
+    b.append(document.createTextNode("⚠ " + err.message));
+    messages.pop();
     persistCurrent();
   }
   stopWaiting();
   busy = false;
-  $("send").textContent = "↑";
-  $("send").title = "Send";
   $("send").disabled = false;
-  $("send").onclick = send;
   $("input").focus();
 }
 $("send").onclick = send;

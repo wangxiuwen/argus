@@ -44,17 +44,17 @@ class MediaModelReadinessTests(unittest.TestCase):
 
 
 class UnifiedConversationTests(unittest.TestCase):
-    def test_media_modes_share_the_chat_composer(self):
+    def test_agent_chooses_media_tools_from_one_chat_composer(self):
         html = (ROOT / "share" / "ui.html").read_text()
-        for mode in ("chat", "image", "music", "video"):
-            self.assertIn(f'<option value="{mode}">', html)
+        self.assertIn("Agent · 自动选择能力", html)
+        self.assertNotIn('id="modeSelect"', html)
         self.assertNotIn('id="videoView"', html)
         self.assertNotIn('id="musicView"', html)
-        self.assertIn("messages.push(user, record)", html)
+        self.assertIn('fetch("/mira/agent"', html)
+        self.assertIn("renderTaskCard(b,taskId)", html)
         self.assertIn("renderMedia(card, m)", html)
         self.assertNotIn('id="chatBtn"', html)
         self.assertEqual(html.count('id="newChat"'), 1)
-        self.assertIn('<option value="360">6 分钟</option>', html)
 
     def test_composer_uses_newline_enter_and_modified_enter_to_send(self):
         html = (ROOT / "share" / "ui.html").read_text()

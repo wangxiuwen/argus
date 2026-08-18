@@ -11,11 +11,13 @@ an eye-slash when stopped.
 
 ## Features
 
-- **One conversation, every modality** — select Chat, Image, Music, or Video beside the composer. Prompts, progress, failures and finished media remain together in the same persistent conversation history.
+- **Tool-calling creative agent** — write normally in one conversation. The local chat model decides when to call image, music or video generation tools; there is no mode switch.
+- **Durable batch generation** — requests such as “create 100 songs” become persistent SQLite-backed batches with per-item prompts, progress, pause, resume and cancel controls. Closing the window or restarting Mira does not discard the queue.
+- **Large-run safeguard** — batches over 20 items or an estimated 5 GB require explicit confirmation before they are created. A single request may contain up to 1,000 outputs.
 - **Local image generation** — FLUX.2-klein 4B 4-bit creates PNG images locally. Its approximately 5 GB weights download only when first used.
 - **Local music generation** — MiniMax Music 3 8-bit turns a style prompt and sectioned lyrics into playable WAV files. Its approximately 13 GB weights download only when first used.
 - **Local video generation** — MiniMax H3 produces video with synchronized stereo audio. Mira handles the source download, visible progress, 4-bit conversion and inline playback.
-- **Desktop chat app** — **Open Mira** in the menu bar opens a native window (AppKit + WebKit) with past conversations, images by ＋ / drag & drop / ⌘V, streaming replies and collapsible thinking. Enter inserts a line break; ⌘↵ or Ctrl+Enter sends. No Electron.
+- **Desktop chat app** — **Open Mira** in the menu bar opens a native window (AppKit + WebKit) with past conversations, images by ＋ / drag & drop / ⌘V, Agent replies and live generation task cards. Enter inserts a line break; ⌘↵ or Ctrl+Enter sends. No Electron.
 - **Thinking on demand** — a Think chip next to the model picker turns reasoning on or off per request, no restart involved. Reasoning streams into a collapsible block.
 - **Speed readout** — live tokens/s while generating, then a footer with tok/s, time to first token and total time. On an M2 Max, Qwen3.8-27B in bf16 runs around 6 tok/s; the 4bit variant is several times faster.
 - **Launch page** — copyable commands that point curl, the OpenAI Python/Node SDKs, Codex, aider or any OpenAI-compatible app at your local server, with the current model name filled in.
@@ -62,6 +64,21 @@ curl http://127.0.0.1:8090/v1/chat/completions -H 'Content-Type: application/jso
 ```
 
 Any OpenAI SDK works — point `base_url` at `http://127.0.0.1:8090/v1`.
+
+### Creative Agent and batches
+
+The desktop conversation uses the loaded local model's native OpenAI-compatible
+tool calls. Mira supplies `generate_images`, `generate_music`,
+`generate_videos`, task-listing and task-control tools, then executes the tool
+calls through a durable local worker. No cloud Agent service or external Agent
+framework is involved.
+
+For example, type `生成 1000 首每首 2 分钟、歌词各不相同的木吉他歌曲`.
+Mira first reports the estimated output size and asks for confirmation. After
+confirmation it generates each song serially, creates distinct prompts and
+lyrics just in time, and keeps running if the window is closed. Progress and
+completed outputs reappear in the same conversation. Queue state lives at
+`~/Library/Application Support/Mira/jobs.sqlite3`.
 
 ### CLI
 

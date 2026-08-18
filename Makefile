@@ -1,12 +1,13 @@
 APP     = Mira
-VERSION = 0.2.3
+VERSION = 0.3.0
 OUT     = .build/$(APP)
 BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin
 STAGE   = .build/stage
 DIST    = dist/mira-$(VERSION)-macos-arm64.tar.gz
 SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html \
-	share/launch.py share/bridge.py share/prune.py share/video.py share/music.py share/image.py
+	share/launch.py share/bridge.py share/prune.py share/video.py share/music.py \
+	share/image.py share/jobs.py
 VIDEO_PIPELINES = share/video-pipelines/*.vpipeline
 VPIPE_DMG = .cache/VpipeManager-0.1.26-with-ffmpeg.dmg
 VPIPE_SHA256 = 25abea40b3bde34670295939771f288832f5b5358374140fce0c20bdc177b276

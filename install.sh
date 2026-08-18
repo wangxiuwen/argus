@@ -17,7 +17,7 @@ install -m 755 bin/argus "$BIN_DIR/argus"
 install -m 755 bin/argus "$BIN_DIR/mira"
 install -m 644 share/chat.py share/ui.py share/ui.html share/settings.html \
   share/launch.py share/bridge.py share/prune.py share/video.py share/music.py \
-  share/image.py "$SHARE_DIR/"
+  share/image.py share/jobs.py "$SHARE_DIR/"
 mkdir -p "$SHARE_DIR/video-pipelines"
 install -m 644 share/video-pipelines/*.vpipeline "$SHARE_DIR/video-pipelines/"
 

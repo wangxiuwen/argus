@@ -110,7 +110,7 @@ class IterationRuntimeTests(unittest.TestCase):
                 iteration.publish_code_candidate("publish-code", confirmed=False)
             which.assert_not_called()
 
-    def test_publication_creates_branch_commit_and_pr_without_touching_main(self):
+    def test_publication_creates_branch_commit_and_mr_without_touching_main(self):
         root = Path(self.temp.name)
         origin, seed, candidate_path = root / "origin.git", root / "seed", root / "candidate"
         subprocess.run(["git", "init", "--bare", "--initial-branch=main", origin], check=True,
@@ -137,27 +137,27 @@ class IterationRuntimeTests(unittest.TestCase):
               (id,kind,status,goal,path,branch,created,updated)
               VALUES(?,?,?,?,?,?,?,?)""",
                        ("publish-ok", "code", "publishing", "Improve app",
-                        str(candidate_path), "mira/iteration-publish-ok", now, now))
+                        str(candidate_path), "fermi/iteration-publish-ok", now, now))
         old_push = iteration.PUBLIC_PUSH_REPO
         iteration.PUBLIC_PUSH_REPO = str(origin)
         try:
-            with mock.patch.object(iteration, "_create_or_find_pr",
-                                   return_value="https://github.com/example/mira/pull/1"):
-                iteration._publication_worker("publish-ok", "mira/iteration-publish-ok")
+            with mock.patch.object(iteration, "_create_or_find_mr",
+                                   return_value="https://gitlab.example/fermi/-/merge_requests/1"):
+                iteration._publication_worker("publish-ok", "fermi/iteration-publish-ok")
         finally:
             iteration.PUBLIC_PUSH_REPO = old_push
         published = iteration._candidate("publish-ok")
         self.assertEqual(published["status"], "published")
-        self.assertEqual(published["pr_url"], "https://github.com/example/mira/pull/1")
+        self.assertEqual(published["pr_url"], "https://gitlab.example/fermi/-/merge_requests/1")
         branch_commit = subprocess.run(
-            ["git", "--git-dir", origin, "rev-parse", "refs/heads/mira/iteration-publish-ok"],
+            ["git", "--git-dir", origin, "rev-parse", "refs/heads/fermi/iteration-publish-ok"],
             check=True, capture_output=True, text=True).stdout.strip()
         self.assertEqual(branch_commit, published["published_commit"])
         main_after = subprocess.run(["git", "--git-dir", origin, "rev-parse", "main"],
                                     check=True, capture_output=True, text=True).stdout.strip()
         self.assertEqual(main_before, main_after)
 
-    def test_publication_rejects_github_workflow_changes(self):
+    def test_publication_rejects_gitlab_pipeline_changes(self):
         path = Path(self.temp.name) / "protected"
         subprocess.run(["git", "init", "--initial-branch=main", path], check=True,
                        capture_output=True)
@@ -166,8 +166,7 @@ class IterationRuntimeTests(unittest.TestCase):
         subprocess.run(["git", "-C", path, "-c", "user.name=Test", "-c",
                         "user.email=test@example.com", "commit", "-m", "base"],
                        check=True, capture_output=True)
-        workflow = path / ".github" / "workflows" / "unsafe.yml"
-        workflow.parent.mkdir(parents=True)
+        workflow = path / ".gitlab-ci.yml"
         workflow.write_text("on: push\n")
         now = 1.0
         with iteration.database() as db:
@@ -175,8 +174,8 @@ class IterationRuntimeTests(unittest.TestCase):
               (id,kind,status,goal,path,branch,created,updated)
               VALUES(?,?,?,?,?,?,?,?)""",
                        ("publish-blocked", "code", "publishing", "Change automation",
-                        str(path), "mira/iteration-blocked", now, now))
-        iteration._publication_worker("publish-blocked", "mira/iteration-blocked")
+                        str(path), "fermi/iteration-blocked", now, now))
+        iteration._publication_worker("publish-blocked", "fermi/iteration-blocked")
         blocked = iteration._candidate("publish-blocked")
         self.assertEqual(blocked["status"], "publish_failed")
         self.assertIn("protected automation", blocked["error"])

@@ -55,8 +55,8 @@ H3 artifacts live under the same HF cache in `hub/mira-vpipe`.
 ## Install
 
 ```bash
-git clone https://github.com/wangxiuwen/mira.git
-cd mira
+git clone git@gitlab-v16.turingapi.com:wangxiuwen/fermi.git
+cd fermi
 make install
 open ~/Applications/Fermi.app
 ```
@@ -102,8 +102,8 @@ then waits for an explicit second click before applying it to its isolated sourc
 copy or starting a training process. The running app and base model are never
 silently overwritten.
 
-An approved code Candidate can be published as a uniquely named GitHub branch
-and pull request. Fermi reruns the test suite, blocks changes to GitHub automation,
+An approved code Candidate can be published as a uniquely named GitLab branch
+and merge request. Fermi reruns the test suite, blocks changes to GitLab automation,
 scans for private labels, and records the commit and PR URL. It never pushes to
 `main`, merges the PR, or creates a release automatically.
 

@@ -1,0 +1,31 @@
+stages:
+  - test
+  - release
+
+# Fermi requires AppKit/WebKit and bundles arm64-only media runtimes. Register a
+# protected Apple Silicon runner with this tag before enabling project CI.
+.macos-arm64:
+  tags:
+    - macos-arm64
+
+test:
+  extends: .macos-arm64
+  stage: test
+  script:
+    - swift --version
+    - make test
+
+release:
+  extends: .macos-arm64
+  stage: release
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+  script:
+    - make dist VERSION="${CI_COMMIT_TAG#v}"
+    - tar -tzf dist/fermi-*-macos-arm64.tar.gz | grep -qx './Fermi.app/Contents/MacOS/Fermi'
+    - tar -tzf dist/fermi-*-macos-arm64.tar.gz | grep -qx './Fermi.app/Contents/Resources/Fermi.icns'
+  artifacts:
+    name: "fermi-${CI_COMMIT_TAG}-macos-arm64"
+    paths:
+      - dist/fermi-*-macos-arm64.tar.gz
+    expire_in: never

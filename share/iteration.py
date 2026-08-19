@@ -23,10 +23,10 @@ ROOT = pathlib.Path(os.environ.get(
 DB = pathlib.Path(os.environ.get(
     "MIRA_JOBS_DB",
     pathlib.Path.home() / "Library" / "Application Support" / "Mira" / "jobs.sqlite3"))
-PUBLIC_REPO = "https://github.com/wangxiuwen/mira.git"
+PUBLIC_REPO = "git@gitlab-v16.turingapi.com:wangxiuwen/fermi.git"
 PUBLIC_PUSH_REPO = os.environ.get(
-    "MIRA_PUBLIC_PUSH_REPO", "ssh://git@ssh.github.com:443/wangxiuwen/mira.git")
-PUBLIC_GH_REPO = os.environ.get("MIRA_PUBLIC_GH_REPO", "wangxiuwen/mira")
+    "MIRA_PUBLIC_PUSH_REPO", "git@gitlab-v16.turingapi.com:wangxiuwen/fermi.git")
+PUBLIC_GITLAB_PROJECT = os.environ.get("MIRA_PUBLIC_GITLAB_PROJECT", "wangxiuwen/fermi")
 FERMI = pathlib.Path.home() / ".local" / "bin" / "fermi"
 lock = threading.RLock()
 
@@ -297,7 +297,8 @@ def _publication_changes(path):
         ["git", "diff", "--cached", "--name-only", "-z"], cwd=path,
         check=True, capture_output=True, timeout=60).stdout.split(b"\0")
     names = [value.decode("utf-8", "strict") for value in changed if value]
-    protected = [name for name in names if name.startswith((".github/workflows/", ".github/actions/"))
+    protected = [name for name in names if name == ".gitlab-ci.yml"
+                 or name.startswith((".github/workflows/", ".github/actions/"))
                  or name == ".gitmodules"]
     if protected:
         raise RuntimeError("self-published Candidates cannot change protected automation: " +
@@ -316,15 +317,17 @@ def _publication_changes(path):
     return names
 
 
-def _create_or_find_pr(branch, title, body):
+def _create_or_find_mr(branch, title, body):
     existing = subprocess.run(
-        ["gh", "pr", "view", branch, "--repo", PUBLIC_GH_REPO,
-         "--json", "url", "--jq", ".url"], capture_output=True, text=True, timeout=60)
+        ["glab", "mr", "view", branch, "--repo", PUBLIC_GITLAB_PROJECT,
+         "--output", "json"], capture_output=True, text=True, timeout=60)
     if existing.returncode == 0 and existing.stdout.strip():
-        return existing.stdout.strip()
+        data = json.loads(existing.stdout)
+        return data.get("web_url") or data.get("url")
     created = subprocess.run(
-        ["gh", "pr", "create", "--repo", PUBLIC_GH_REPO, "--base", "main",
-         "--head", branch, "--title", title, "--body", body],
+        ["glab", "mr", "create", "--repo", PUBLIC_GITLAB_PROJECT,
+         "--target-branch", "main", "--source-branch", branch,
+         "--title", title, "--description", body, "--yes"],
         check=True, capture_output=True, text=True, timeout=120)
     return created.stdout.strip().splitlines()[-1]
 
@@ -338,12 +341,12 @@ def publish_code_candidate(candidate_id, confirmed=False):
         raise ValueError("code candidate is not publishable")
     if confirmed is not True:
         raise ValueError("explicit publication approval is required")
-    if not shutil.which("gh"):
-        raise RuntimeError("GitHub CLI is required to publish a PR")
-    auth = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=30)
+    if not shutil.which("glab"):
+        raise RuntimeError("GitLab CLI is required to publish a merge request")
+    auth = subprocess.run(["glab", "auth", "status"], capture_output=True, text=True, timeout=30)
     if auth.returncode:
-        raise RuntimeError("GitHub CLI is not authenticated")
-    branch = candidate.get("branch") or f"mira/iteration-{candidate_id}"
+        raise RuntimeError("GitLab CLI is not authenticated")
+    branch = candidate.get("branch") or f"fermi/iteration-{candidate_id}"
     _update_candidate(candidate_id, status="publishing", branch=branch, error=None)
     threading.Thread(target=_publication_worker,
                      args=(candidate_id, branch), daemon=True).start()
@@ -369,7 +372,7 @@ def _publication_worker(candidate_id, branch):
         if staged.returncode != 0:
             subprocess.run(
                 ["git", "-c", "user.name=Fermi Iteration",
-                 "-c", "user.email=fermi-iteration@users.noreply.github.com",
+                 "-c", "user.email=fermi-iteration@users.noreply.gitlab.com",
                  "commit", "-m", title], cwd=path, check=True,
                 capture_output=True, text=True, timeout=120)
         elif not candidate.get("published_commit"):
@@ -383,7 +386,7 @@ def _publication_worker(candidate_id, branch):
                 f"Goal: {candidate['goal']}\n\n"
                 f"Local `make test` passed before publication. Changed files: {len(names)}.\n\n"
                 "This PR was not merged automatically.")
-        pr_url = _create_or_find_pr(branch, title, body)
+        pr_url = _create_or_find_mr(branch, title, body)
         _update_candidate(candidate_id, status="published", pr_url=pr_url, error=None)
     except Exception as error:  # noqa: BLE001
         _update_candidate(candidate_id, status="publish_failed", error=str(error))

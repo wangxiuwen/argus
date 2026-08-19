@@ -90,12 +90,12 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("setActivationPolicy(.regular)", swift)
         self.assertNotIn("windowDidMiniaturize", swift)
 
-    def test_release_notes_heredoc_stays_inside_yaml_run_block(self):
-        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
-        notes = workflow.split("--notes \"$(cat <<'EOF'\n", 1)[1].split("\n          EOF", 1)[0]
-        for line in notes.splitlines():
-            if line:
-                self.assertTrue(line.startswith("          "), repr(line))
+    def test_gitlab_pipeline_uses_an_arm64_macos_runner_and_fermi_artifacts(self):
+        pipeline = (ROOT / ".gitlab-ci.yml").read_text()
+        self.assertIn("macos-arm64", pipeline)
+        self.assertIn("make test", pipeline)
+        self.assertIn('make dist VERSION="${CI_COMMIT_TAG#v}"', pipeline)
+        self.assertIn("dist/fermi-*-macos-arm64.tar.gz", pipeline)
 
 
 if __name__ == "__main__":

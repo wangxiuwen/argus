@@ -10,7 +10,7 @@ Fermi should improve Creations, remember Preferences, propose source changes, an
 
 Automatic Iterations may refine prompts, retry failed Quality Gates, and apply explicit Preferences. Code and model Iterations must first produce a Candidate in isolated storage. Applying a code Candidate or starting a Training Run requires a separate explicit Approval. Fermi never installs a Candidate over the running application automatically.
 
-Publishing a tested code Candidate is a separate explicit Approval. Publication creates a unique branch and pull request; it never pushes directly to `main`, merges the pull request, publishes a release, or edits GitHub automation files.
+Publishing a tested code Candidate is a separate explicit Approval. Publication creates a unique GitLab branch and merge request; it never pushes directly to `main`, merges the merge request, publishes a release, or edits GitLab automation files.
 
 All evidence, state transitions, commands, and outputs are durable and inspectable. Training data contains only examples explicitly rated for learning.
 

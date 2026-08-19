@@ -1,6 +1,8 @@
 from pathlib import Path
 import plistlib
 import re
+import subprocess
+import tempfile
 import unittest
 
 
@@ -8,6 +10,27 @@ ROOT = Path(__file__).parents[1]
 
 
 class ReleaseMetadataTests(unittest.TestCase):
+    def test_status_item_symbols_resolve_at_runtime(self):
+        """An invalid SF Symbol renders the tray as an invisible empty slot —
+        a string assertion cannot catch that, so ask AppKit for real."""
+        swift = (ROOT / "Mira" / "main.swift").read_text()
+        names = sorted(set(re.findall(r'systemSymbolName: "([a-zA-Z.]+)"', swift))
+                       | set(re.findall(r'symbol: "([a-zA-Z.]+)"', swift)))
+        self.assertTrue(names, "no tray symbols found to check")
+        probe = ["import AppKit"]
+        for name in names:
+            probe.append(
+                f'print("{name}:\\(NSImage(systemSymbolName: "{name}", '
+                'accessibilityDescription: nil) != nil)")')
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "probe.swift"
+            path.write_text("\n".join(probe) + "\n")
+            run = subprocess.run(["swift", str(path)], capture_output=True,
+                                 text=True, timeout=180)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        bad = [line for line in run.stdout.splitlines() if line.endswith("false")]
+        self.assertEqual([], bad, f"SF Symbols that do not resolve: {bad}")
+
     def test_source_bundle_version_matches_makefile_default(self):
         makefile = (ROOT / "Makefile").read_text()
         version = re.search(r"^VERSION\s*=\s*(\S+)", makefile, re.MULTILINE).group(1)
@@ -37,7 +60,11 @@ class ReleaseMetadataTests(unittest.TestCase):
         swift = (ROOT / "Mira" / "main.swift").read_text()
         page = (ROOT / "share" / "ui.html").read_text()
         readme = (ROOT / "README.md").read_text()
-        self.assertIn('symbol: String = "feather"', swift)
+        # "feather" was the intended brand mark but is not a valid SF Symbol
+        # here — the tray rendered as an invisible empty slot. The bird marks
+        # resolve everywhere; the resolution test below is the real guard.
+        self.assertIn('symbol: String = "bird.fill"', swift)
+        self.assertNotIn('systemSymbolName: "feather"', swift)
         self.assertNotIn('systemSymbolName: "eye', swift)
         self.assertIn("hero-feather", page)
         self.assertIn('<img src="/mira/icon.png" alt="">', page)

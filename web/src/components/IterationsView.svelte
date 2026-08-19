@@ -56,7 +56,7 @@
 
   function approveAction(c: Candidate): { action: string; label: string } | null {
     let action: string | null = null, label = "";
-    if(c.kind==="code"&&["ready","applied","publish_failed"].includes(c.status)){action="publish";label=c.status==="publish_failed"?"重新批准发布 MR":"批准发布 GitLab MR";}
+    if(c.kind==="code"&&["ready","applied","publish_failed"].includes(c.status)){action="publish";label=c.status==="publish_failed"?"重新批准发布 PR":"批准发布 GitHub PR";}
     if(c.kind==="lora"&&c.status==="ready"){action="start";label="批准开始训练";}
     return action ? { action, label } : null;
   }
@@ -99,7 +99,7 @@
   function approveLabel(c: Candidate, a: { action: string; label: string }): string {
     if (working[c.id]) return "正在执行…";
     if (failed[c.id]) return failed[c.id];
-    if (armed[c.id]) return a.action==="publish"?"再次点击确认：创建分支和 MR":"再次点击确认（不会覆盖当前 Fermi）";
+    if (armed[c.id]) return a.action==="publish"?"再次点击确认：创建分支和 PR":"再次点击确认（不会覆盖当前 Fermi）";
     return a.label;
   }
 
@@ -177,7 +177,7 @@
             {r.label}
             <div class="candidate-meta">{r.meta}</div>
             {#if r.c.pr_url}
-              <a class="media-download" href={r.c.pr_url} target="_blank" rel="noopener noreferrer">打开 GitLab MR</a>
+              <a class="media-download" href={r.c.pr_url} target="_blank" rel="noopener noreferrer">打开 GitHub PR</a>
             {/if}
             {#if r.approve}
               <button class="media-download" disabled={working[r.c.id]} onclick={() => r.approve && onApprove(r.c, r.approve)}>{approveLabel(r.c, r.approve)}</button>

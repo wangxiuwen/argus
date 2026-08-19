@@ -57,6 +57,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("applicationShouldHandleReopen", swift)
         makefile = (ROOT / "Makefile").read_text()
         self.assertIn("Contents/Resources/Fermi.icns", makefile)
+        self.assertIn("Contents/Resources/FermiIcon.png", makefile)
         self.assertIn("Contents/Resources/FermiMark.png", makefile)
 
     def test_branding_uses_a_precise_fermi_field_mark(self):
@@ -65,6 +66,8 @@ class ReleaseMetadataTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
         mark = (ROOT / "assets" / "FermiMark.svg").read_text()
         self.assertIn('Bundle.main.url(forResource: "FermiMark", withExtension: "png")', swift)
+        self.assertIn('Bundle.main.url(forResource: "FermiIcon", withExtension: "png")', swift)
+        self.assertIn("NSApp.applicationIconImage = icon", swift)
         self.assertIn('statusItem.button?.image = fermiMark()', swift)
         self.assertIn('openItem.image = fermiMark(size: 16)', swift)
         self.assertNotIn('systemSymbolName: "bird', swift)

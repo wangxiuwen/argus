@@ -81,6 +81,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let url = Bundle.main.url(forResource: "FermiIcon", withExtension: "png"),
+           let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
         // A regular Dock app needs an application menu as well as editing shortcuts.
         let mainMenu = NSMenu()
         let appHolder = NSMenuItem()

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/FermiMark.svg" width="112" height="112" alt="Fermi logo">
+</p>
+
 # Fermi
 
 Fermi is a native macOS workspace for local chat, coding agents and local media
@@ -6,8 +10,8 @@ create images, compose music, or render videos without switching to a separate a
 
 Click **Start** and you get an **OpenAI-compatible API** (`/v1/chat/completions`) that understands both **text and images**, running entirely on your machine. No cloud, no telemetry, no Electron.
 
-Fermi appears in both the Dock and menu bar. Its orbital-wave mark combines a
-quantum trajectory with the gesture of a sound wave; the menu bar uses a native
+Fermi appears in both the Dock and menu bar. Its field-variable mark combines
+the physics symbol *f*, a sound wave, and one particle point; the menu bar uses a native
 monochrome atom symbol that changes color with the server state. Closing the chat window hides Fermi from the Dock while keeping the
 menu bar app and services alive; minimizing the window keeps its Dock icon.
 

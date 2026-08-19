@@ -51,17 +51,18 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(info["CFBundleExecutable"], "Fermi")
         self.assertEqual(info["CFBundleIconFile"], "Fermi")
         self.assertTrue((ROOT / "assets" / "Fermi.icns").is_file())
-        self.assertTrue((ROOT / "share" / "FermiIcon.png").is_file())
+        self.assertTrue((ROOT / "share" / "FermiMark.png").is_file())
         swift = (ROOT / "Fermi" / "main.swift").read_text()
         self.assertIn("setActivationPolicy(.regular)", swift)
         self.assertIn("applicationShouldHandleReopen", swift)
         makefile = (ROOT / "Makefile").read_text()
         self.assertIn("Contents/Resources/Fermi.icns", makefile)
 
-    def test_branding_uses_fermi_orbital_mark(self):
+    def test_branding_uses_a_precise_fermi_field_mark(self):
         swift = (ROOT / "Fermi" / "main.swift").read_text()
         page = (ROOT / "share" / "ui.html").read_text()
         readme = (ROOT / "README.md").read_text()
+        mark = (ROOT / "assets" / "FermiMark.svg").read_text()
         self.assertIn('symbol: String = "atom"', swift)
         self.assertNotIn('systemSymbolName: "bird', swift)
         self.assertNotIn('systemSymbolName: "eye', swift)
@@ -75,10 +76,15 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertNotIn("hero-eye", page)
         self.assertNotIn("brand-eye", page)
         self.assertIn("fermi", readme.lower())
+        self.assertIn('viewBox="0 0 256 256"', mark)
+        self.assertIn("#18181B", mark)
+        self.assertIn("#6D3DF5", mark)
+        self.assertNotIn("gradient", mark.lower())
+        self.assertNotIn("filter", mark.lower())
 
         backend = (ROOT / "share" / "ui.py").read_text()
         self.assertIn('route == "/mira/icon.png"', backend)
-        self.assertIn('self._serve_png("FermiIcon.png")', backend)
+        self.assertIn('self._serve_png("FermiMark.png")', backend)
 
     def test_close_hides_dock_but_minimize_keeps_it(self):
         swift = (ROOT / "Fermi" / "main.swift").read_text()

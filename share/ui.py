@@ -777,7 +777,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 self.send_error(404)
         elif route == "/mira/icon.png":
-            self._serve_png("FermiIcon.png")
+            self._serve_png("FermiMark.png")
         elif self.path == "/settings":
             self._serve_html("settings.html")
         elif self.path == "/argus/config":

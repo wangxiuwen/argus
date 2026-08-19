@@ -40,7 +40,7 @@ jobs:
                       ./Fermi.app/Contents/Helpers/vpipe \
                       ./Fermi.app/Contents/Helpers/mlx-serve/mlx-serve \
                       ./bin/argus ./share/chat.py ./share/ui.py ./share/ui.html \
-                      ./share/settings.html ./share/FermiIcon.png ./share/bridge.py ./share/launch.py \
+                      ./share/settings.html ./share/FermiMark.png ./share/bridge.py ./share/launch.py \
                       ./share/prune.py ./share/video.py ./share/music.py \
                       ./share/image.py ./share/jobs.py ./share/iteration.py \
                       ./install.sh ./README.md ./LICENSE; do

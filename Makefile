@@ -5,7 +5,7 @@ BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin
 STAGE   = .build/stage
 DIST    = dist/fermi-$(VERSION)-macos-arm64.tar.gz
-SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html share/FermiIcon.png \
+SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html share/FermiMark.png \
 	share/launch.py share/bridge.py share/prune.py share/video.py share/music.py \
 	share/image.py share/jobs.py share/iteration.py
 VIDEO_PIPELINES = share/video-pipelines/*.vpipeline

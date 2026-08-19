@@ -560,6 +560,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    # Vite build output (make install ships it as <share>/dist). Served when
+    # present; the legacy ui.html stays as the fallback so the two UIs can
+    # run side by side during the migration.
+    WEB_DIST = pathlib.Path(os.environ.get("MIRA_WEB_DIST", os.path.join(HERE, "dist")))
+    DIST_TYPES = {".html": "text/html; charset=utf-8",
+                  ".js": "text/javascript", ".mjs": "text/javascript",
+                  ".css": "text/css", ".svg": "image/svg+xml",
+                  ".png": "image/png", ".ico": "image/x-icon",
+                  ".json": "application/json", ".woff2": "font/woff2",
+                  ".map": "application/json"}
+
+    def _serve_dist_file(self, path):
+        with open(path, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", self.DIST_TYPES.get(path.suffix,
+                                                             "application/octet-stream"))
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _dist_candidate(self):
+        """A file inside WEB_DIST matching the request path, or None."""
+        if not self.WEB_DIST.is_dir():
+            return None
+        rel = urllib.parse.urlparse(self.path).path.lstrip("/") or "index.html"
+        if rel == "index.html" and self.path.endswith("/"):
+            rel = "index.html"
+        try:
+            candidate = (self.WEB_DIST / rel).resolve()
+            candidate.relative_to(self.WEB_DIST.resolve())
+        except (ValueError, OSError):
+            return None
+        return candidate if candidate.is_file() else None
+
     def _serve_html(self, name="ui.html"):
         with open(os.path.join(HERE, name), "rb") as f:
             body = f.read()
@@ -729,7 +765,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         route = urllib.parse.urlparse(self.path).path
         if route in ("/", "/index.html"):
-            self._serve_html()
+            dist_index = self._dist_candidate()
+            if dist_index is not None:
+                self._serve_dist_file(dist_index)
+            else:
+                self._serve_html()
+        elif route.startswith("/assets/") or route == "/favicon.svg":
+            dist_file = self._dist_candidate()
+            if dist_file is not None:
+                self._serve_dist_file(dist_file)
+            else:
+                self.send_error(404)
         elif route == "/mira/icon.png":
             self._serve_png("MiraIcon.png")
         elif self.path == "/settings":

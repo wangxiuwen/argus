@@ -1,5 +1,5 @@
 APP     = Mira
-VERSION = 0.4.11
+VERSION = 0.5.0
 OUT     = .build/$(APP)
 BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin
@@ -15,7 +15,7 @@ VPIPE_SHA256 = 25abea40b3bde34670295939771f288832f5b5358374140fce0c20bdc177b276
 MLX_SERVE_ARCHIVE = .cache/mlx-serve-bin-macos-arm64-26.8.8.tar.gz
 MLX_SERVE_SHA256 = 15a083189124f67b1625fc4c2f76726fa6b82c052812c398ad5c3e250386fc0a
 
-.PHONY: build test install uninstall clean dist verify-vpipe verify-mlx-serve
+.PHONY: build webbuild test install uninstall clean dist verify-vpipe verify-mlx-serve
 
 build:
 	mkdir -p .build
@@ -27,6 +27,7 @@ test:
 	python3 -m py_compile share/*.py
 	zsh -n bin/argus
 	sh -n install.sh
+	cd web && npm install --no-fund --no-audit --silent && npx vite build
 
 verify-vpipe: $(VPIPE_DMG)
 	@echo "$(VPIPE_SHA256)  $(VPIPE_DMG)" | shasum -a 256 -c -
@@ -42,7 +43,10 @@ $(MLX_SERVE_ARCHIVE):
 	mkdir -p .cache
 	curl -fL --retry 3 -o "$@" https://github.com/ddalcu/mlx-serve/releases/download/v26.8.8/mlx-serve-bin-macos-arm64.tar.gz
 
-install: build verify-vpipe verify-mlx-serve
+webbuild:
+	cd web && npm install --no-fund --no-audit --silent && npx vite build
+
+install: build webbuild verify-vpipe verify-mlx-serve
 	mkdir -p $(BUNDLE)/Contents/MacOS $(BUNDLE)/Contents/Resources/video-pipelines $(BIN_DIR)
 	cp $(OUT) $(BUNDLE)/Contents/MacOS/
 	cp Info.plist $(BUNDLE)/Contents/
@@ -57,6 +61,8 @@ install: build verify-vpipe verify-mlx-serve
 	install -m 755 bin/argus $(BIN_DIR)/mira
 	mkdir -p $(HOME)/.local/share/argus
 	install -m 644 $(SHARE_FILES) $(HOME)/.local/share/argus/
+	rm -rf $(HOME)/.local/share/argus/dist
+	cp -r web/dist $(HOME)/.local/share/argus/dist
 	@echo "installed: $(BUNDLE) and $(BIN_DIR)/mira (argus compatibility alias retained)"
 	@echo "open the tray app with: open $(BUNDLE)"
 
@@ -69,7 +75,7 @@ uninstall:
 	rm -f $(BIN_DIR)/mira
 	rm -rf $(HOME)/.local/share/argus
 
-dist: build verify-vpipe verify-mlx-serve
+dist: build webbuild verify-vpipe verify-mlx-serve
 	rm -rf $(STAGE) && mkdir -p $(STAGE)/$(APP).app/Contents/MacOS $(STAGE)/$(APP).app/Contents/Resources/video-pipelines $(STAGE)/bin $(STAGE)/share/video-pipelines dist
 	cp $(OUT) $(STAGE)/$(APP).app/Contents/MacOS/
 	cp Info.plist $(STAGE)/$(APP).app/Contents/
@@ -82,6 +88,7 @@ dist: build verify-vpipe verify-mlx-serve
 	codesign --force --deep --sign - $(STAGE)/$(APP).app
 	cp bin/argus $(STAGE)/bin/
 	cp $(SHARE_FILES) $(STAGE)/share/
+	rm -rf $(STAGE)/share/dist && cp -r web/dist $(STAGE)/share/dist
 	cp $(VIDEO_PIPELINES) $(STAGE)/share/video-pipelines/
 	cp install.sh README.md LICENSE THIRD_PARTY_NOTICES.md $(STAGE)/
 	cp -R LICENSES $(STAGE)/

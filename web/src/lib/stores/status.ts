@@ -20,7 +20,7 @@ export const dotOk = writable(false);
 export const apiFoot = writable("");
 
 export function startupText(h: any): string {
-  if (h.stage === "failed") return h.error || "服务启动失败，请查看 Mira 日志";
+  if (h.stage === "failed") return h.error || "服务启动失败，请查看 Fermi 日志";
   if (!h.alive) return "server stopped";
   if (h.stage === "downloading") {
     const pct = h.percent != null ? ` ${h.percent}%` : "";

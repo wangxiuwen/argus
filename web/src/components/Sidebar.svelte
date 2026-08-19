@@ -27,6 +27,12 @@
     if (c.id === get(curId)) newChat(); // else: renderChats() is now reactive
   }
 
+  function openChatFromKeyboard(e: KeyboardEvent, id: string) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    openChat(id);
+  }
+
   // pollReady()'s apiFoot update (ui.html:991-992), derived from lastHealth
   $: apiFootText = (() => {
     const h = $lastHealth;
@@ -38,8 +44,8 @@
 
 <nav id="side" class:hidden={$sidebarHidden}>
   <div id="sideTop">
-    <span class="brand-feather" aria-hidden="true"><img src="/mira/icon.png" alt=""></span>
-    <span class="brand-name">Mira</span>
+    <span class="brand-mark" aria-hidden="true"><img src="/mira/icon.png" alt=""></span>
+    <span class="brand-name">Fermi</span>
     <button class="icon-btn" id="toggleIn" title="Collapse sidebar" on:click={() => setSidebar(true)}>
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
         <rect x="2.2" y="3.4" width="15.6" height="13.2" rx="2.6"/>
@@ -61,7 +67,8 @@
   <div class="label">对话记录</div>
   <div id="chats">
     {#each $chats as c (c.id)}
-      <div class="chat-row" class:cur={c.id === $curId} on:click={() => openChat(c.id)}>
+      <div class="chat-row" class:cur={c.id === $curId} role="button" tabindex="0"
+           on:click={() => openChat(c.id)} on:keydown={e => openChatFromKeyboard(e, c.id)}>
         <span class="t">{c.title}</span>
         <button class="del" on:click={e => deleteChat(e, c)}>✕</button>
       </div>

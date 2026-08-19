@@ -124,6 +124,25 @@ class DurableQueueTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             jobs.action(running["id"], "retry")
 
+    def test_repeat_appends_a_creation_without_losing_the_completed_output(self):
+        result, _ = jobs.create_batch({"kind": "music", "prompt": "warm guitar", "lyrics": "la"})
+        batch_id = result["id"]
+        with jobs.database() as db:
+            db.execute(
+                "UPDATE items SET status='complete',output='/files/original.wav' WHERE batch_id=?",
+                (batch_id,))
+            db.execute(
+                "UPDATE batches SET status='complete',completed=1 WHERE id=?", (batch_id,))
+
+        repeated = jobs.action(batch_id, "repeat")
+
+        self.assertEqual(repeated["status"], "queued")
+        self.assertEqual(repeated["total"], 2)
+        self.assertEqual(repeated["completed"], 1)
+        self.assertEqual(
+            [(item["position"], item["status"], item["output"]) for item in repeated["items"]],
+            [(1, "complete", "/files/original.wav"), (2, "queued", None)])
+
 
 class AgentLoopTests(unittest.TestCase):
     def test_agent_can_propose_but_cannot_approve_self_changes(self):

@@ -6,8 +6,9 @@
   // that is the old stopWaiting() teardown.
   import { onMount, onDestroy } from "svelte";
   import { runAgentRequest, waitingAnchor } from "../lib/agent";
+  import type { AgentMessage } from "../lib/domain";
 
-  export let record: any;
+  export let record: AgentMessage;
   export let chatId: string | null = null;
 
   let secs = 0;

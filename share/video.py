@@ -189,7 +189,7 @@ def run_commands(stage, commands, output=None, attempts=1, job_id=None, download
                     if attempt == attempts:
                         detail = f"exit code {code}" if code else "expected output was not created"
                         raise RuntimeError(f"VPIPE failed after {attempts} attempts: {detail}")
-                    log.write(f"\n[Mira Video] attempt {attempt}/{attempts} incomplete; retrying in 3 seconds\n".encode())
+                    log.write(f"\n[Fermi Video] attempt {attempt}/{attempts} incomplete; retrying in 3 seconds\n".encode())
                     time.sleep(3)
             with lock: state.update(stage="ready", process=None)
         except InterruptedError:
@@ -250,7 +250,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(chunk); remaining -= len(chunk)
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/": self.send(b'{"service":"Mira video"}')
+        if parsed.path == "/": self.send(b'{"service":"Fermi video"}')
         elif parsed.path == "/api/status": self.send(status())
         elif parsed.path == "/api/outputs": self.send(output_items())
         elif parsed.path == "/api/log":

@@ -140,7 +140,7 @@ class CliConfigTests(unittest.TestCase):
             result = self.run_argus(home, "status")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("failed", result.stdout)
-            self.assertIn("mira log", result.stdout)
+            self.assertIn("fermi log", result.stdout)
 
     def test_stale_pidfile_never_kills_another_mlx_server(self):
         other = subprocess.Popen([

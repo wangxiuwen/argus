@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Durable local generation queue for Mira's image, music and video tools."""
+"""Durable local generation queue for Fermi's image, music and video tools."""
 import json
 import importlib.util
 import os
@@ -38,7 +38,7 @@ agent_lock = threading.Lock()
 agent_inflight = {}
 agent_results = {}
 
-AGENT_SYSTEM = """You are Mira, a local creative agent. Image, music and video generation are
+AGENT_SYSTEM = """You are Fermi, a local creative agent. Image, music and video generation are
 tools, not separate chat modes. Use a tool whenever the user asks you to create media. For
 multiple outputs, create one durable batch. A tool may return confirmation_required for a
 large batch; explain the estimated size and ask for confirmation. When the user confirms,
@@ -70,9 +70,9 @@ AGENT_TOOLS = [
      "description": "List recent generation batches and their progress",
      "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "control_generation_task",
-     "description": "Pause, resume, retry failed items of, or cancel a generation batch",
+     "description": "Pause, resume, retry failed items of, repeat a completed creation in, or cancel a generation batch",
      "parameters": {"type": "object", "properties": {
-         "batch_id": {"type": "string"}, "action": {"type": "string", "enum": ["pause", "resume", "retry", "cancel"]}},
+         "batch_id": {"type": "string"}, "action": {"type": "string", "enum": ["pause", "resume", "retry", "repeat", "cancel"]}},
          "required": ["batch_id", "action"]}}},
     {"type": "function", "function": {"name": "remember_preference",
      "description": "Persist an explicit user creative preference for future work",
@@ -80,7 +80,7 @@ AGENT_TOOLS = [
          "name": {"type": "string"}, "value": {"type": "string"}},
          "required": ["name", "value"]}}},
     {"type": "function", "function": {"name": "propose_self_update",
-     "description": "Create an isolated, tested Mira source-code candidate; never installs it",
+     "description": "Create an isolated, tested Fermi source-code candidate; never installs it",
      "parameters": {"type": "object", "properties": {"goal": {"type": "string"}},
                     "required": ["goal"]}}},
     {"type": "function", "function": {"name": "prepare_lora_training",
@@ -205,6 +205,25 @@ def batches():
 
 
 def action(batch_id, name):
+    if name == "repeat":
+        with db_lock, database() as db:
+            current = db.execute(
+                "SELECT status FROM batches WHERE id=?", (batch_id,)).fetchone()
+            if not current:
+                return None
+            if current["status"] != "complete":
+                raise ValueError(f"cannot repeat a {current['status']} batch")
+            position = db.execute(
+                "SELECT COALESCE(max(position),0)+1 FROM items WHERE batch_id=?",
+                (batch_id,)).fetchone()[0]
+            db.execute(
+                "INSERT INTO items(batch_id,position,status) VALUES(?,?,'queued')",
+                (batch_id, position))
+            db.execute(
+                "UPDATE batches SET status='queued',total=total+1,error=NULL,updated=? "
+                "WHERE id=?", (time.time(), batch_id))
+        wake.set()
+        return batch(batch_id)
     if name == "retry":
         with db_lock, database() as db:
             current = db.execute("SELECT status FROM batches WHERE id=?", (batch_id,)).fetchone()

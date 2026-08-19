@@ -9,12 +9,7 @@
   import MediaCard from "./MediaCard.svelte";
   import TaskCard from "./TaskCard.svelte";
   import Waiting from "./Waiting.svelte";
-
-  // openChat's per-message extraction, verbatim (ui.html:505-508)
-  const imgsOf = (m: any) => Array.isArray(m.content)
-    ? m.content.filter(p => p.type === "image_url").map(p => p.image_url.url) : [];
-  const textOf = (m: any) => typeof m.content === "string"
-    ? m.content : (m.content.find(p => p.type === "text")?.text || "");
+  import { isPlanningAgentMessage, messageImages, messageText } from "../lib/domain";
 
   // bubble() cleared #log's .empty class (restoring it is newChat()'s job via
   // the empty messages store) and scrolled to the bottom on every append.
@@ -30,5 +25,5 @@
 {#if $messages.length === 0}
   <Hero />
 {:else}
-  {#each $messages as m (m)}<Bubble role={m.role === "user" ? "user" : "bot"} text={textOf(m)} imgs={imgsOf(m)}>{#if m.kind}<MediaCard record={m} />{/if}{#each m.tasks || [] as taskId}<TaskCard id={taskId} />{/each}{#if m.status === "planning" && m.requestId}<Waiting record={m} chatId={$curId} />{/if}</Bubble>{/each}
+  {#each $messages as m (m)}<Bubble role={m.role === "user" ? "user" : "bot"} text={messageText(m.content)} imgs={messageImages(m.content)}>{#if m.kind}<MediaCard record={m} />{/if}{#each m.tasks || [] as taskId}<TaskCard id={taskId} />{/each}{#if isPlanningAgentMessage(m)}<Waiting record={m} chatId={$curId} />{/if}</Bubble>{/each}
 {/if}

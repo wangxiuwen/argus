@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mira</title>
+<title>Fermi</title>
 <style>
   :root {
     --bg: #ffffff; --side: #f7f7f8; --text: #18181b; --muted: #85858d;
@@ -32,8 +32,8 @@
   }
   #side.hidden { display: none; }
   #sideTop { height: 40px; display: flex; align-items: center; gap: 9px; padding: 0 8px; margin-bottom: 5px; }
-  .brand-feather { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; background: #fff; box-shadow: inset 0 0 0 1px #e8e8eb; }
-  .brand-feather img { width: 24px; height: 24px; display: block; }
+  .brand-mark { width: 24px; height: 24px; display: grid; place-items: center; }
+  .brand-mark img { width: 24px; height: 24px; display: block; }
   .brand-name { font-weight: 650; letter-spacing: -.01em; }
   #sideTop .icon-btn { margin-left: auto; }
   .icon-btn {
@@ -124,8 +124,8 @@
   .shortcut { color: var(--muted); font-size: 11px; white-space: nowrap; }
   #log.empty { display: flex; align-items: center; justify-content: center; }
   #hero { width: min(560px,100%); text-align: center; color: var(--muted); padding-bottom: 90px; }
-  #hero .hero-feather { width: 50px; height: 50px; border-radius: 14px; margin: 0 auto 17px; display: grid; place-items: center; background: #fff; box-shadow: inset 0 0 0 1px #e8e8eb; }
-  #hero .hero-feather img { width: 50px; height: 50px; display: block; }
+  #hero .hero-mark { width: 50px; height: 50px; margin: 0 auto 17px; display: grid; place-items: center; }
+  #hero .hero-mark img { width: 50px; height: 50px; display: block; }
   #hero h1 { color: var(--text); font-size: 24px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -.025em; }
   #hero .t { font-size: 13px; }
   .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 25px; text-align: left; }
@@ -261,8 +261,8 @@
 <body>
 <nav id="side">
   <div id="sideTop">
-    <span class="brand-feather" aria-hidden="true"><img src="/mira/icon.png" alt=""></span>
-    <span class="brand-name">Mira</span>
+    <span class="brand-mark" aria-hidden="true"><img src="/mira/icon.png" alt=""></span>
+    <span class="brand-name">Fermi</span>
     <button class="icon-btn" id="toggleIn" title="Collapse sidebar">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
         <rect x="2.2" y="3.4" width="15.6" height="13.2" rx="2.6"/>
@@ -301,12 +301,12 @@
     <span id="status"><span id="statusText">connecting…</span><span id="dot"></span></span>
   </div>
   <div id="log" class="empty">
-    <div id="hero"><span class="hero-feather" aria-hidden="true"><img src="/mira/icon.png" alt=""></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,'image')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,'music')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,'video')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>
+    <div id="hero"><span class="hero-mark" aria-hidden="true"><img src="/mira/icon.png" alt=""></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,'image')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,'music')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,'video')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>
   </div>
   <div id="launch">
     <div class="wrap">
       <h2>Launch</h2>
-      <div class="sub">复制命令到终端运行；编码工具会通过 Mira 本地桥接服务使用当前模型。</div>
+      <div class="sub">复制命令到终端运行；编码工具会通过 Fermi 本地桥接服务使用当前模型。</div>
       <div id="cards"></div>
     </div>
   </div>
@@ -347,7 +347,7 @@ let lastTps = 0;  // tokens/s reported by the server for the request in flight
 let ready = false, lastHealth = {};
 
 /* ---------- sidebar + chat history ---------- */
-const HERO = '<div id="hero"><span class="hero-feather" aria-hidden="true"><img src="/mira/icon.png" alt=""></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,\'image\')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,\'music\')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,\'video\')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>';
+const HERO = '<div id="hero"><span class="hero-mark" aria-hidden="true"><img src="/mira/icon.png" alt=""></span><h1>今天想创作什么？</h1><span class="t">聊天、图片、音乐和视频，都在同一个对话里完成</span><div class="suggestions"><button class="suggestion" onclick="useSuggestion(this)">帮我把想法整理成一段提示词</button><button class="suggestion" onclick="useSuggestion(this,\'image\')">生成一张雨夜上海街头的电影感画面</button><button class="suggestion" onclick="useSuggestion(this,\'music\')">创作一首温暖的木吉他流行歌</button><button class="suggestion" onclick="useSuggestion(this,\'video\')">生成晨雾森林里小鹿穿过阳光的视频</button></div></div>';
 function useSuggestion(button) {
   const input = $("input"); input.value = button.textContent; input.focus();
   input.dispatchEvent(new Event("input"));
@@ -532,13 +532,13 @@ const LAUNCH = api => [
   {icon: "⬢", name: "OpenAI Node SDK", desc: "Same for JavaScript and TypeScript",
    cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=mira node your_script.mjs`},
   {icon: "⌘", name: "Codex CLI", desc: "OpenAI's coding agent against your local model",
-   cmd: `mira launch codex`},
+   cmd: `fermi launch codex`},
   {icon: "✎", name: "aider", desc: "Pair programming in your terminal",
-   cmd: `mira launch aider`},
+   cmd: `fermi launch aider`},
   {icon: "◇", name: "OpenCode", desc: "Open-source coding agent against your local model",
-   cmd: `mira launch opencode`},
+   cmd: `fermi launch opencode`},
   {icon: "✦", name: "Claude Code", desc: "Anthropic's coding agent in local-friendly bare mode",
-   cmd: `mira launch claude`},
+   cmd: `fermi launch claude`},
   {icon: "⚙", name: "Any OpenAI-compatible app", desc: "Open WebUI, Continue, Zed, Raycast — paste these two values",
    cmd: `Base URL: ${api}\nAPI key:  mira   (any non-empty string works)`},
 ];
@@ -617,7 +617,7 @@ async function renderIterations() {
     quality.innerHTML=`<h3>反馈数据</h3><div class="candidate-meta">${data.feedback.total || 0} 条反馈 · ${data.feedback.learnable || 0} 条可训练 · 平均 ${data.feedback.average ?? "—"}/5</div>`;
     box.append(quality);
     const code=document.createElement("section"); code.className="iteration-section";
-    code.innerHTML='<h3>源码自我迭代</h3><div class="iteration-form"><input id="codeGoal" placeholder="希望 Mira 自己改进什么？"><button class="media-download" id="makeCode">生成隔离 Candidate</button></div>';
+    code.innerHTML='<h3>源码自我迭代</h3><div class="iteration-form"><input id="codeGoal" placeholder="希望 Fermi 自己改进什么？"><button class="media-download" id="makeCode">生成隔离 Candidate</button></div>';
     box.append(code);
     $("makeCode").onclick=async()=>{const goal=$("codeGoal").value.trim();if(!goal)return;await mediaJson("/mira/candidates/code",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal})});renderIterations();};
     const train=document.createElement("section"); train.className="iteration-section";
@@ -625,7 +625,7 @@ async function renderIterations() {
     box.append(train);
     $("makeLora").onclick=async()=>{await mediaJson("/mira/candidates/lora",{method:"POST",headers:{"Content-Type":"application/json"},body:'{"iters":100}'});renderIterations();};
     const list=document.createElement("section"); list.className="iteration-section"; list.innerHTML="<h3>迭代候选</h3>";
-    for(const c of data.candidates){const row=document.createElement("div");row.className="candidate-row";row.append(document.createTextNode(candidateLabel(c)));const meta=document.createElement("div");meta.className="candidate-meta";meta.textContent=c.error || c.summary || c.goal || "";row.append(meta);if(c.pr_url){const link=document.createElement("a");link.href=c.pr_url;link.target="_blank";link.rel="noopener noreferrer";link.className="media-download";link.textContent="打开 GitHub PR";row.append(link);}let action=null,label="";if(c.kind==="code"&&["ready","applied","publish_failed"].includes(c.status)){action="publish";label=c.status==="publish_failed"?"重新批准发布 PR":"批准发布 GitHub PR";}if(c.kind==="lora"&&c.status==="ready"){action="start";label="批准开始训练";}if(action){const b=document.createElement("button");b.className="media-download";b.textContent=label;b.onclick=()=>{if(b.dataset.armed!=="true"){b.dataset.armed="true";b.textContent=action==="publish"?"再次点击确认：创建分支和 PR":"再次点击确认（不会覆盖当前 Mira）";return;}b.disabled=true;b.textContent="正在执行…";candidateApproval(c.id,action).catch(e=>{b.disabled=false;b.textContent=`失败：${e.message}`;});};row.append(b);}list.append(row);}box.append(list);if(data.candidates.some(c=>["queued","preparing","running","publishing"].includes(c.status)))setTimeout(renderIterations,3000);
+    for(const c of data.candidates){const row=document.createElement("div");row.className="candidate-row";row.append(document.createTextNode(candidateLabel(c)));const meta=document.createElement("div");meta.className="candidate-meta";meta.textContent=c.error || c.summary || c.goal || "";row.append(meta);if(c.pr_url){const link=document.createElement("a");link.href=c.pr_url;link.target="_blank";link.rel="noopener noreferrer";link.className="media-download";link.textContent="打开 GitHub PR";row.append(link);}let action=null,label="";if(c.kind==="code"&&["ready","applied","publish_failed"].includes(c.status)){action="publish";label=c.status==="publish_failed"?"重新批准发布 PR":"批准发布 GitHub PR";}if(c.kind==="lora"&&c.status==="ready"){action="start";label="批准开始训练";}if(action){const b=document.createElement("button");b.className="media-download";b.textContent=label;b.onclick=()=>{if(b.dataset.armed!=="true"){b.dataset.armed="true";b.textContent=action==="publish"?"再次点击确认：创建分支和 PR":"再次点击确认（不会覆盖当前 Fermi）";return;}b.disabled=true;b.textContent="正在执行…";candidateApproval(c.id,action).catch(e=>{b.disabled=false;b.textContent=`失败：${e.message}`;});};row.append(b);}list.append(row);}box.append(list);if(data.candidates.some(c=>["queued","preparing","running","publishing"].includes(c.status)))setTimeout(renderIterations,3000);
   } catch(e) { box.textContent=`迭代状态读取失败：${e.message}`; }
 }
 $("iterationBtn").onclick=renderIterations;
@@ -747,7 +747,7 @@ function renderMedia(container, record) {
   if (record.kind === "video") { const el=document.createElement("video"); el.controls=true; el.preload="metadata"; el.src=record.url; container.append(el); }
   const actions=document.createElement("div"); actions.className="media-actions";
   const download=document.createElement("button"); download.className="media-download";
-  download.textContent="下载到“下载/Mira”";
+  download.textContent="下载到“下载/Fermi”";
   download.onclick=async()=>{
     download.disabled=true; download.textContent="正在保存…";
     try {
@@ -825,6 +825,16 @@ async function renderTaskCard(parent, id) {
         };
         actions.append(retry); card.append(actions);
         setTimeout(refresh,3000);
+      } else if(task.status==="complete"){
+        const actions=document.createElement("div"); actions.className="task-actions";
+        const repeat=document.createElement("button"); repeat.className="media-download";
+        repeat.textContent="再次生成";
+        repeat.onclick=async()=>{
+          repeat.disabled=true; repeat.textContent="正在重新排队…";
+          try { await taskAction(id,"repeat"); } catch(e) { repeat.disabled=false; repeat.textContent=`重新生成失败：${e.message}`; return; }
+          refresh();
+        };
+        actions.append(repeat); card.append(actions);
       }
     } catch(e) { card.textContent=`任务状态读取失败：${e.message}`; }
   }
@@ -993,7 +1003,7 @@ async function pollReady() {
 }
 
 function startupText(h) {
-  if (h.stage === "failed") return h.error || "服务启动失败，请查看 Mira 日志";
+  if (h.stage === "failed") return h.error || "服务启动失败，请查看 Fermi 日志";
   if (!h.alive) return "server stopped";
   if (h.stage === "downloading") {
     const pct = h.percent != null ? ` ${h.percent}%` : "";

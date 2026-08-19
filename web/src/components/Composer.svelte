@@ -14,11 +14,12 @@
   import { model, botNotices, botBubble } from "../lib/stores/models";
   import { ready, lastHealth, startupText, pollReady, startPolling } from "../lib/stores/status";
   import { busy } from "../lib/stores/ui";
-  import { curId, messages, persistCurrent } from "../lib/stores/chats";
+  import { curId, appendMessage } from "../lib/stores/chats";
   // lib/agent.ts (chat-core) — expected export:
   //   runAgentRequest(record, bubble?, chatId)  [legacy arity; DOM bubble arg
   //   is dead in Svelte — passed as undefined, record is the render source]
   import { runAgentRequest } from "../lib/agent";
+  import type { AgentMessage, MessageContent } from "../lib/domain";
   import Thumbs, { images, fileToImage } from "./Thumbs.svelte";
   import ModelPicker from "./ModelPicker.svelte";
 
@@ -73,16 +74,14 @@
     if (inputEl) inputEl.style.height = "auto";
     // bubble("user", text, imgs) — the user bubble is rendered by MessageList
     // from the message record pushed below (content carries the images).
-    const content = imgs.length
-      ? [...imgs.map(u => ({type: "image_url", image_url: {url: u}})), {type: "text", text: text || "Describe this image."}]
+    const content: MessageContent = imgs.length
+      ? [...imgs.map(u => ({type: "image_url" as const, image_url: {url: u}})), {type: "text" as const, text: text || "Describe this image."}]
       : text;
     const requestId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-    messages.update(arr => { arr.push({role: "user", content, requestId}); return arr; });
-    persistCurrent();
+    appendMessage({role: "user", content, requestId});
     const chatId = get(curId);
-    const record: any = {role: "assistant", content: "", tasks: [], status: "planning", requestId};
-    messages.update(arr => { arr.push(record); return arr; });
-    persistCurrent();
+    const record: AgentMessage = {role: "assistant", content: "", tasks: [], status: "planning", requestId};
+    appendMessage(record);
     await runAgentRequest(record, chatId);
   }
 
@@ -109,15 +108,16 @@
   // Notices are ephemeral in legacy (openChat re-rendered #log and wiped
   // them); clearing on chat switch reproduces that. Re-opening the same chat
   // keeps them here (legacy would wipe — accepted deviation).
-  let prevCurId: string | null | undefined = undefined;
-  // NOTE: rewritten without self-referencing reactive writes (a block that
-  // reads AND writes prevCurId re-invalidates itself forever).
-  $: if (prevCurId !== undefined && prevCurId !== $curId) { botNotices.set([]); prevCurId = $curId; }
-
   onMount(() => {
     inputEl?.focus(); // ui.html:1172
     startPolling();   // ui.html:1006-1007 — idempotent; App.svelte may also call it
     window.addEventListener("mira:prefill", onPrefill as EventListener);
+    let previous = get(curId);
+    const stop = curId.subscribe(id => {
+      if (id !== previous) botNotices.set([]);
+      previous = id;
+    });
+    return () => stop();
   });
   onDestroy(() => window.removeEventListener("mira:prefill", onPrefill as EventListener));
 </script>

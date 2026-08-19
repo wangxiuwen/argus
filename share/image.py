@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mira 的本地图片生成服务，驱动随应用分发的 mlx-serve。"""
+"""Fermi 的本地图片生成服务，驱动随应用分发的 mlx-serve。"""
 import base64
 import json
 import os
@@ -22,7 +22,7 @@ MLX_BINARY = pathlib.Path(os.environ.get(
     "MIRA_MLX_SERVE", BUNDLE / "Contents" / "Helpers" / "mlx-serve" / "mlx-serve"))
 MODEL_DIR = pathlib.Path.home() / ".mlx-serve" / "models" / MODEL
 READY_MARKER = MODEL_DIR / ".mira-ready"
-OUT = pathlib.Path.home() / "Pictures" / "Mira"
+OUT = pathlib.Path.home() / "Pictures" / "Fermi"
 PORT = int(os.environ.get("MIRA_IMAGE_PORT", "9880"))
 OUT.mkdir(parents=True, exist_ok=True)
 state = {"stage": "idle", "error": None, "output": None, "progress": None,
@@ -85,7 +85,7 @@ def prepare_model():
             state.update(stage="preparing", error=None, progress=None)
         try:
             if not MLX_BINARY.is_file():
-                raise RuntimeError("mlx-serve 没有包含在 Mira 中")
+                raise RuntimeError("mlx-serve 没有包含在 Fermi 中")
             downloader = shutil.which("hf") or shutil.which("huggingface-cli")
             if downloader:
                 env = dict(os.environ)

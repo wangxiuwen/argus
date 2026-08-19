@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mira 内部的 MiniMax Music 3 本地任务服务。"""
+"""Fermi 内部的 MiniMax Music 3 本地任务服务。"""
 import json
 import os
 import pathlib
@@ -20,7 +20,7 @@ MLX_BINARY = pathlib.Path(os.environ.get(
     "MIRA_MLX_SERVE", BUNDLE / "Contents" / "Helpers" / "mlx-serve" / "mlx-serve"))
 MODEL_DIR = pathlib.Path.home() / ".mlx-serve" / "models" / MODEL
 LEGACY_OUT = pathlib.Path.home() / "Music" / "minimax3"
-OUT = str(LEGACY_OUT if LEGACY_OUT.exists() else pathlib.Path.home() / "Music" / "Mira")
+OUT = str(LEGACY_OUT if LEGACY_OUT.exists() else pathlib.Path.home() / "Music" / "Fermi")
 PORT = int(os.environ.get("MIRA_MUSIC_PORT", "9879"))
 os.makedirs(OUT, exist_ok=True)
 state = {"stage": "idle", "error": None, "output": None, "progress": None,
@@ -194,7 +194,7 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
-            self._send(200, b'{"service":"Mira music"}')
+            self._send(200, b'{"service":"Fermi music"}')
         elif self.path == "/api/status":
             with lock:
                 stage, error = state["stage"], state["error"]
@@ -262,5 +262,5 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"Mira music service on http://127.0.0.1:{PORT}  (mlx-serve on :11234)")
+    print(f"Fermi music service on http://127.0.0.1:{PORT}  (mlx-serve on :11234)")
     ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()

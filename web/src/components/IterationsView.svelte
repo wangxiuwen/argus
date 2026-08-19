@@ -10,10 +10,16 @@
   import { view } from "../lib/stores/ui";
   import { mediaJson } from "../lib/api";
 
-  function candidateLabel(candidate: any) {
+  type CandidateStatus = "queued" | "preparing" | "running" | "ready" | "insufficient_data" | "complete" | "failed" | "applied" | "publishing" | "published" | "publish_failed";
+  interface Candidate { id: string; kind: "code" | "lora"; status: CandidateStatus; error?: string; summary?: string; goal?: string; pr_url?: string }
+  interface Preference { name: string; value: string }
+  interface IterationOverview { preferences: Preference[]; feedback: { total?: number; learnable?: number; average?: number }; candidates: Candidate[] }
+  interface CandidateRow { c: Candidate; label: string; meta: string; approve: { action: string; label: string } | null }
+
+  function candidateLabel(candidate: Candidate) {
     const kind = candidate.kind === "code" ? "源码" : "模型适配";
-    const states = {queued:"排队中",preparing:"准备中",running:"运行中",ready:"待批准",insufficient_data:"数据不足",complete:"已完成",failed:"失败",applied:"已应用",publishing:"正在发布 PR",published:"PR 已创建",publish_failed:"发布失败"};
-    return `${kind}候选 · ${states[candidate.status] || candidate.status}`;
+    const states: Record<CandidateStatus, string> = {queued:"排队中",preparing:"准备中",running:"运行中",ready:"待批准",insufficient_data:"数据不足",complete:"已完成",failed:"失败",applied:"已应用",publishing:"正在发布 PR",published:"PR 已创建",publish_failed:"发布失败"};
+    return `${kind}候选 · ${states[candidate.status]}`;
   }
 
   async function candidateApproval(id: string, action: string) {
@@ -34,7 +40,7 @@
   let fbTotal: any = 0;
   let fbLearnable: any = 0;
   let fbAvg: any = "—";
-  let rows: any[] = [];                // candidate rows, derived inside the try
+  let rows: CandidateRow[] = [];       // candidate rows, derived inside the try
   let codeGoal = "";
   let armed: Record<string, boolean> = {};    // two-step confirm: first click
   let working: Record<string, boolean> = {};  // approval POST in flight
@@ -48,7 +54,7 @@
     if (el) el.textContent = text;
   }
 
-  function approveAction(c: any): { action: string; label: string } | null {
+  function approveAction(c: Candidate): { action: string; label: string } | null {
     let action: string | null = null, label = "";
     if(c.kind==="code"&&["ready","applied","publish_failed"].includes(c.status)){action="publish";label=c.status==="publish_failed"?"重新批准发布 PR":"批准发布 GitHub PR";}
     if(c.kind==="lora"&&c.status==="ready"){action="start";label="批准开始训练";}
@@ -61,7 +67,7 @@
     loadError = null;
     armed = {}; working = {}; failed = {}; codeGoal = "";
     try {
-      const data = await mediaJson("/mira/iterations");
+      const data = await mediaJson<IterationOverview>("/mira/iterations");
       // Shape the display model where the legacy DOM build happened — inside
       // the same try, so malformed payloads land in the same catch.
       prefCount = data.preferences.length;
@@ -69,7 +75,7 @@
       fbTotal = data.feedback.total || 0;
       fbLearnable = data.feedback.learnable || 0;
       fbAvg = data.feedback.average ?? "—";
-      rows = data.candidates.map((c: any) => ({
+      rows = data.candidates.map(c => ({
         c,
         label: candidateLabel(c),
         meta: c.error || c.summary || c.goal || "",
@@ -90,14 +96,14 @@
     }
   }
 
-  function approveLabel(c: any, a: { action: string; label: string }): string {
+  function approveLabel(c: Candidate, a: { action: string; label: string }): string {
     if (working[c.id]) return "正在执行…";
     if (failed[c.id]) return failed[c.id];
-    if (armed[c.id]) return a.action==="publish"?"再次点击确认：创建分支和 PR":"再次点击确认（不会覆盖当前 Mira）";
+    if (armed[c.id]) return a.action==="publish"?"再次点击确认：创建分支和 PR":"再次点击确认（不会覆盖当前 Fermi）";
     return a.label;
   }
 
-  function onApprove(c: any, a: { action: string; label: string }) {
+  function onApprove(c: Candidate, a: { action: string; label: string }) {
     if(!armed[c.id]){ armed = { ...armed, [c.id]: true }; return; }
     working = { ...working, [c.id]: true };
     failed = { ...failed }; delete failed[c.id];
@@ -153,7 +159,7 @@
       <section class="iteration-section">
         <h3>源码自我迭代</h3>
         <div class="iteration-form">
-          <input id="codeGoal" placeholder="希望 Mira 自己改进什么？" bind:value={codeGoal}>
+          <input id="codeGoal" placeholder="希望 Fermi 自己改进什么？" bind:value={codeGoal}>
           <button class="media-download" id="makeCode" onclick={makeCode}>生成隔离 Candidate</button>
         </div>
       </section>
@@ -174,7 +180,7 @@
               <a class="media-download" href={r.c.pr_url} target="_blank" rel="noopener noreferrer">打开 GitHub PR</a>
             {/if}
             {#if r.approve}
-              <button class="media-download" disabled={working[r.c.id]} onclick={() => onApprove(r.c, r.approve)}>{approveLabel(r.c, r.approve)}</button>
+              <button class="media-download" disabled={working[r.c.id]} onclick={() => r.approve && onApprove(r.c, r.approve)}>{approveLabel(r.c, r.approve)}</button>
             {/if}
           </div>
         {/each}

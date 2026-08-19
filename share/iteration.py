@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mira's durable self-iteration runtime.
+"""Fermi's durable self-iteration runtime.
 
 The public interface keeps quality, preferences, code candidates, and LoRA
 training behind one approval-aware module. Callers provide local-model and
@@ -27,7 +27,7 @@ PUBLIC_REPO = "https://github.com/wangxiuwen/mira.git"
 PUBLIC_PUSH_REPO = os.environ.get(
     "MIRA_PUBLIC_PUSH_REPO", "ssh://git@ssh.github.com:443/wangxiuwen/mira.git")
 PUBLIC_GH_REPO = os.environ.get("MIRA_PUBLIC_GH_REPO", "wangxiuwen/mira")
-MIRA = pathlib.Path.home() / ".local" / "bin" / "mira"
+FERMI = pathlib.Path.home() / ".local" / "bin" / "fermi"
 lock = threading.RLock()
 
 
@@ -248,10 +248,10 @@ def _build_code_candidate(candidate_id, goal, path):
         path.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "-C", str(source), "worktree", "add", "--detach", str(path), "HEAD"],
                        check=True, capture_output=True, text=True, timeout=120)
-        prompt = ("Improve Mira for this approved goal: " + goal +
+        prompt = ("Improve Fermi for this approved goal: " + goal +
                   "\nWork only in this isolated candidate. Preserve privacy, add regression tests, "
                   "run make test, and do not publish, install, or modify any other checkout.")
-        command = [str(MIRA), "launch", "codex", "exec", "--sandbox", "workspace-write",
+        command = [str(FERMI), "launch", "codex", "exec", "--sandbox", "workspace-write",
                    "--approve-for-me", "--ephemeral", "-C", str(path), prompt]
         _update_candidate(candidate_id, status="running", command=json.dumps(command))
         with open(log_path, "w", encoding="utf-8") as log:
@@ -365,11 +365,11 @@ def _publication_worker(candidate_id, branch):
         names = _publication_changes(path)
         staged = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=path,
                                 timeout=60)
-        title = "Mira iteration: " + " ".join(candidate["goal"].split())[:60]
+        title = "Fermi iteration: " + " ".join(candidate["goal"].split())[:60]
         if staged.returncode != 0:
             subprocess.run(
-                ["git", "-c", "user.name=Mira Iteration",
-                 "-c", "user.email=mira-iteration@users.noreply.github.com",
+                ["git", "-c", "user.name=Fermi Iteration",
+                 "-c", "user.email=fermi-iteration@users.noreply.github.com",
                  "commit", "-m", title], cwd=path, check=True,
                 capture_output=True, text=True, timeout=120)
         elif not candidate.get("published_commit"):
@@ -379,7 +379,7 @@ def _publication_worker(candidate_id, branch):
         _update_candidate(candidate_id, published_commit=commit)
         subprocess.run(["git", "push", PUBLIC_PUSH_REPO, f"HEAD:refs/heads/{branch}"],
                        cwd=path, check=True, capture_output=True, text=True, timeout=300)
-        body = (f"Automated Candidate `{candidate_id}` for an explicitly approved Mira Iteration.\n\n"
+        body = (f"Automated Candidate `{candidate_id}` for an explicitly approved Fermi Iteration.\n\n"
                 f"Goal: {candidate['goal']}\n\n"
                 f"Local `make test` passed before publication. Changed files: {len(names)}.\n\n"
                 "This PR was not merged automatically.")

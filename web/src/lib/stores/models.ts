@@ -28,7 +28,7 @@ export function botBubble(text: string, isNotice = false): void {
   botNotices.update(list => [...list, { id: ++noticeSeq, text, notice: isNotice }]);
 }
 
-export function shortName(id: string): string { return id.split("/").pop(); }
+export function shortName(id: string): string { return id.split("/").pop() ?? id; }
 
 // Legacy setPickerLabel (ui.html:906-912): name strips a trailing "(…)" group,
 // title keeps the full label. Updates automatically wherever model/variants

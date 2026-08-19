@@ -18,13 +18,13 @@
     {icon: "⬢", name: "OpenAI Node SDK", desc: "Same for JavaScript and TypeScript",
      cmd: `OPENAI_BASE_URL=${api} OPENAI_API_KEY=mira node your_script.mjs`},
     {icon: "⌘", name: "Codex CLI", desc: "OpenAI's coding agent against your local model",
-     cmd: `mira launch codex`},
+     cmd: `fermi launch codex`},
     {icon: "✎", name: "aider", desc: "Pair programming in your terminal",
-     cmd: `mira launch aider`},
+     cmd: `fermi launch aider`},
     {icon: "◇", name: "OpenCode", desc: "Open-source coding agent against your local model",
-     cmd: `mira launch opencode`},
+     cmd: `fermi launch opencode`},
     {icon: "✦", name: "Claude Code", desc: "Anthropic's coding agent in local-friendly bare mode",
-     cmd: `mira launch claude`},
+     cmd: `fermi launch claude`},
     {icon: "⚙", name: "Any OpenAI-compatible app", desc: "Open WebUI, Continue, Zed, Raycast — paste these two values",
      cmd: `Base URL: ${api}\nAPI key:  mira   (any non-empty string works)`},
   ];
@@ -71,7 +71,7 @@
 <div id="launch">
   <div class="wrap">
     <h2>Launch</h2>
-    <div class="sub">复制命令到终端运行；编码工具会通过 Mira 本地桥接服务使用当前模型。</div>
+    <div class="sub">复制命令到终端运行；编码工具会通过 Fermi 本地桥接服务使用当前模型。</div>
     <div id="cards">
       {#each cards as item, i}
         <div class="card">

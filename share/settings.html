@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Mira Settings</title>
+<title>Fermi Settings</title>
 <style>
   :root {
     --bg: #ffffff; --text: #18181b; --muted: #8a8a91; --border: #e6e6e9;
@@ -82,7 +82,7 @@
   <span class="ic">⏻</span>
   <div class="body">
     <div class="title">Launch at login</div>
-    <div class="hint">Start the Mira menu bar app when you log in.</div>
+    <div class="hint">Start the Fermi menu bar app when you log in.</div>
   </div>
   <button class="sw" id="login"></button>
 </div>
@@ -224,7 +224,7 @@ async function save(restart) {
   if (!restart) await load();
   $("save").disabled = $("saveRestart").disabled = false;
   $("msg").textContent = restart
-    ? "Saved — Mira is restarting (model downloads can take a while)."
+    ? "Saved — Fermi is restarting (model downloads can take a while)."
     : "Saved. Restart the server to apply.";
   if (restart) {
     setTimeout(() => { location.href = result.ui_url + "/settings"; }, 1400);

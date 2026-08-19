@@ -5,11 +5,16 @@
 // just sets a new array reference on the store.
 import { get, writable } from "svelte/store";
 import { showView } from "./ui";
+import {
+  messageText,
+  type Chat,
+  type ChatMessage,
+  type ImagePart,
+} from "../domain";
 
-export interface Chat { id: string; title: string; messages: any[] }
 export const chats = writable<Chat[]>([]);
 export const curId = writable<string | null>(null);
-export const messages = writable<any[]>([]);
+export const messages = writable<ChatMessage[]>([]);
 export const activeAgentRequests = new Set<string>();
 
 export async function loadChats(): Promise<void> {
@@ -25,7 +30,7 @@ export function titleMatchesKind(title: string, kind: string): boolean {
     music: /歌|音乐|歌曲|配乐|music|song/i,
     video: /视频|影片|动画|video/i,
   };
-  return words[kind]?.test(title || "");
+  return words[kind]?.test(title || "") ?? false;
 }
 
 export async function recoverUnlinkedTasks(): Promise<void> {
@@ -65,7 +70,7 @@ export function saveChats(): void {
   const compact = get(chats).slice(0, 50).map(c => ({...c, messages: c.messages.map(m => ({
     ...m,
     content: Array.isArray(m.content)
-      ? m.content.filter(p => p.type !== "image_url")
+      ? m.content.filter((part): part is Exclude<typeof part, ImagePart> => part.type !== "image_url")
       : m.content,
   }))}));
   while (compact.length) {
@@ -77,12 +82,10 @@ export function saveChats(): void {
   try { localStorage.removeItem("argus.chats"); } catch { /* storage unavailable */ }
 }
 
-export function chatTitle(msgs: any[]): string {
+export function chatTitle(msgs: ChatMessage[]): string {
   const first = msgs.find(m => m.role === "user");
   if (!first) return "New chat";
-  const t = typeof first.content === "string"
-    ? first.content
-    : (first.content.find(p => p.type === "text")?.text || "Image");
+  const t = messageText(first.content) || "Image";
   return t.slice(0, 40) || "Image";
 }
 
@@ -103,6 +106,18 @@ export function persistCurrent(): void {
     chats.set([{id, title, messages: msgs}, ...list]);
   }
   saveChats();
+}
+
+/** Add one message and durably attach it to the current Conversation. */
+export function appendMessage(message: ChatMessage): void {
+  messages.update(current => [...current, message]);
+  persistCurrent();
+}
+
+/** Persist an in-place runtime transition and refresh its visible Conversation. */
+export function commitMessageTransition(chatId: string | null): void {
+  saveChats();
+  if (get(curId) === chatId) refreshMessages();
 }
 
 export function newChat(): void {

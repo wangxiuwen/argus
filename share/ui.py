@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mira web chat UI — serves ui.html and proxies /v1/* to the local server.
+"""Fermi web chat UI — serves ui.html and proxies /v1/* to the local server.
 
 The proxy keeps everything same-origin so no CORS setup is needed on the
 mlx-vlm server. SSE streaming responses are forwarded line by line.
@@ -35,7 +35,7 @@ VIDEO_SERVER = os.path.join(HERE, "video.py")
 MUSIC_SERVER = os.path.join(HERE, "music.py")
 IMAGE_SERVER = os.path.join(HERE, "image.py")
 JOBS_SERVER = os.path.join(HERE, "jobs.py")
-DOWNLOAD_DIR = pathlib.Path.home() / "Downloads" / "Mira"
+DOWNLOAD_DIR = pathlib.Path.home() / "Downloads" / "Fermi"
 MEDIA_BASES = {"video": VIDEO_API, "music": MUSIC_API, "image": IMAGE_API}
 MEDIA_SUFFIXES = {"video": ".mp4", "music": ".wav", "image": ".png"}
 
@@ -47,7 +47,7 @@ VARIANTS = [
 
 
 def media_download_url(kind, value):
-    """Resolve only files served by Mira's own loopback media services."""
+    """Resolve only files served by Fermi's own loopback media services."""
     base = MEDIA_BASES.get(kind)
     if not base or not isinstance(value, str):
         raise ValueError("invalid media download")
@@ -55,7 +55,7 @@ def media_download_url(kind, value):
     expected = urllib.parse.urlsplit(base)
     if parsed.scheme or parsed.netloc:
         if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
-            raise ValueError("media URL is not a Mira local file")
+            raise ValueError("media URL is not a Fermi local file")
     path = urllib.parse.unquote(parsed.path)
     name = os.path.basename(path)
     if (not name or name != path.rsplit("/", 1)[-1]
@@ -142,7 +142,7 @@ def variant_list():
 def local_models():
     """Every model already in the Hugging Face cache that mlx-vlm could load.
 
-    Mira is not Qwen-specific: anything mlx-vlm supports (gemma, mistral,
+    Fermi is not Qwen-specific: anything mlx-vlm supports (gemma, mistral,
     pixtral, internvl, glm4v, minicpm-v, moondream, llava, smolvlm, …) shows up
     here once it is on disk.
     """
@@ -249,7 +249,7 @@ def trusted_browser_origin(origin, port, fetch_site=None):
 
     CLI clients do not send Origin or Sec-Fetch-Site.  Browsers do, so a page
     on the public web must not be able to switch models, rewrite config, or
-    invoke local desktop actions through Mira's loopback HTTP server.
+    invoke local desktop actions through Fermi's loopback HTTP server.
     """
     if fetch_site == "cross-site":
         return False
@@ -452,7 +452,7 @@ def ensure_video_server():
     if not os.path.isfile(VIDEO_SERVER):
         return False
     env = dict(os.environ)
-    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Mira.app"))
+    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Fermi.app"))
     subprocess.Popen([sys.executable, VIDEO_SERVER], env=env,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
@@ -474,7 +474,7 @@ def ensure_music_server():
     if not os.path.isfile(MUSIC_SERVER):
         return False
     env = dict(os.environ)
-    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Mira.app"))
+    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Fermi.app"))
     subprocess.Popen([sys.executable, MUSIC_SERVER], env=env,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
@@ -496,7 +496,7 @@ def ensure_image_server():
     if not os.path.isfile(IMAGE_SERVER):
         return False
     env = dict(os.environ)
-    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Mira.app"))
+    env.setdefault("MIRA_BUNDLE", os.path.expanduser("~/Applications/Fermi.app"))
     subprocess.Popen([sys.executable, IMAGE_SERVER], env=env,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
@@ -631,7 +631,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         except OSError:
             body = json.dumps({"error": "the model server is not answering yet — "
-                                        "wait for the status dot to turn green, or run: mira start"}).encode()
+                                        "wait for the status dot to turn green, or run: fermi start"}).encode()
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -661,7 +661,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _video_proxy(self, endpoint, data=None):
         if not ensure_video_server():
-            return self._send_json({"error": "Mira video service is not available"}, 503)
+            return self._send_json({"error": "Fermi video service is not available"}, 503)
         req = urllib.request.Request(VIDEO_API + endpoint, data=data)
         if data is not None:
             req.add_header("Content-Type", "application/json")
@@ -683,7 +683,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _music_proxy(self, endpoint, data=None):
         if not ensure_music_server():
-            return self._send_json({"error": "Mira music service is not available"}, 503)
+            return self._send_json({"error": "Fermi music service is not available"}, 503)
         req = urllib.request.Request(MUSIC_API + endpoint, data=data)
         if data is not None:
             req.add_header("Content-Type", "application/json")
@@ -704,7 +704,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _image_proxy(self, endpoint, data=None):
         if not ensure_image_server():
-            return self._send_json({"error": "Mira image service is not available"}, 503)
+            return self._send_json({"error": "Fermi image service is not available"}, 503)
         req = urllib.request.Request(IMAGE_API + endpoint, data=data)
         if data is not None:
             req.add_header("Content-Type", "application/json")
@@ -725,7 +725,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _jobs_proxy(self, endpoint, data=None):
         if not ensure_jobs_server():
-            return self._send_json({"error": "Mira task service is not available"}, 503)
+            return self._send_json({"error": "Fermi task service is not available"}, 503)
         req = urllib.request.Request(JOBS_API + endpoint, data=data)
         if data is not None:
             req.add_header("Content-Type", "application/json")
@@ -777,7 +777,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 self.send_error(404)
         elif route == "/mira/icon.png":
-            self._serve_png("MiraIcon.png")
+            self._serve_png("FermiIcon.png")
         elif self.path == "/settings":
             self._serve_html("settings.html")
         elif self.path == "/argus/config":
@@ -966,6 +966,6 @@ class Server(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     with Server(("127.0.0.1", PORT), Handler) as srv:
-        print(f"Mira UI on http://127.0.0.1:{PORT} (API: {API})")
+        print(f"Fermi UI on http://127.0.0.1:{PORT} (API: {API})")
         sys.stdout.flush()
         srv.serve_forever()

@@ -19,6 +19,8 @@
   let readError = $state("");
   let retryText = $state("重试失败项");
   let retryDisabled = $state(false);
+  let repeatText = $state("再次生成");
+  let repeatDisabled = $state(false);
   let timer: ReturnType<typeof setTimeout> | null = null;
   let dead = false;
 
@@ -34,6 +36,7 @@
       task = t;
       readError = "";
       retryText = "重试失败项"; retryDisabled = false; // legacy rebuilt the card, resetting the retry button
+      repeatText = "再次生成"; repeatDisabled = false;
       if (!["complete", "failed", "cancelled"].includes(task.status)) {
         timer = setTimeout(refresh, 3000);
       } else if (task.failed > 0 || task.completed + task.failed < task.total) {
@@ -61,6 +64,13 @@
     refresh();
   }
 
+  async function repeatCompleted() {
+    repeatDisabled = true; repeatText = "正在重新排队…";
+    try { await taskAction("repeat"); }
+    catch (e: any) { repeatDisabled = false; repeatText = `重新生成失败：${e.message}`; return; }
+    refresh();
+  }
+
   // Elapsed readout reads task.updated (NOT created) — a recent fix; keep it.
   const stateText = $derived.by(() => {
     if (!task) return "";
@@ -74,6 +84,16 @@
 
   const completedItems = $derived(
     task ? (task.items || []).filter((item: any) => item.status === "complete" && item.output).slice(-3) : []);
+  const finishedCount = $derived(task ? task.completed + task.failed : 0);
+  const runningHint = $derived.by(() => {
+    if (!task || task.status !== "running") return "";
+    if (task.kind === "music") {
+      const seconds = Number(task.spec?.duration_seconds || 60);
+      return `本地模型正在计算整首音频；${seconds} 秒歌曲通常需要十几分钟，完成后一次性出现。`;
+    }
+    if (task.kind === "video") return "本地模型正在逐帧计算视频，完成后一次性出现。";
+    return "本地模型正在生成图片。";
+  });
 
   onMount(refresh);
   onDestroy(() => {
@@ -89,9 +109,14 @@
     {#key task}
       <div class="task-head">{TASK_LABELS[task.kind] || task.kind}批任务 · {task.total} 项<span class="task-state">{stateText}</span></div>
       <div class="task-progress">
-        <progress max={task.total} value={task.completed + task.failed}></progress>
+        {#if task.status === "running" && finishedCount === 0}
+          <progress max={task.total}></progress>
+        {:else}
+          <progress max={task.total} value={finishedCount}></progress>
+        {/if}
         <span>{task.completed}/{task.total}{task.failed ? ` · ${task.failed} 失败` : ""}</span>
       </div>
+      {#if runningHint}<div class="task-hint">{runningHint}</div>{/if}
       {#each completedItems as item (item.position)}
         <div class="task-output">
           <MediaCard record={{ kind: task.kind, url: item.output, batchId: task.id, position: item.position, qualityScore: item.quality_score, status: "complete" }} />
@@ -105,6 +130,10 @@
       {:else if task.failed > 0 || task.completed + task.failed < task.total}
         <div class="task-actions">
           <button class="media-download" disabled={retryDisabled} onclick={retryFailed}>{retryText}</button>
+        </div>
+      {:else if task.status === "complete"}
+        <div class="task-actions">
+          <button class="media-download" disabled={repeatDisabled} onclick={repeatCompleted}>{repeatText}</button>
         </div>
       {/if}
     {/key}

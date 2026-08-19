@@ -2,11 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleExecutable</key><string>Mira</string>
-  <key>CFBundleIdentifier</key><string>io.github.wangxiuwen.mira</string>
-  <key>CFBundleName</key><string>Mira</string>
+  <key>CFBundleExecutable</key><string>Fermi</string>
+  <key>CFBundleIdentifier</key><string>io.github.wangxiuwen.fermi</string>
+  <key>CFBundleName</key><string>Fermi</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleIconFile</key><string>Mira</string>
+  <key>CFBundleIconFile</key><string>Fermi</string>
   <key>CFBundleShortVersionString</key><string>0.5.0</string>
   <key>CFBundleVersion</key><string>0.5.0</string>
   <key>LSMinimumSystemVersion</key><string>26.2</string>

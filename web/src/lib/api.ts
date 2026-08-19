@@ -1,4 +1,4 @@
-// Thin fetch layer over the Mira bridge (same origin, ui.py proxies /mira/*).
+// Thin fetch layer over the Fermi bridge (same origin; /mira/* is the legacy-compatible API).
 export async function mediaJson<T = any>(url: string, options?: RequestInit): Promise<T> {
   const r = await fetch(url, options);
   const body = await r.json();

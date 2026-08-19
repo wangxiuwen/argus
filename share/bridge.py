@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Anthropic-compatible bridge for Mira.
+"""Anthropic-compatible bridge for Fermi.
 
 Serves POST /v1/messages in Anthropic's Messages format and translates to the
 OpenAI /v1/chat/completions endpoint that mlx-vlm exposes, so Anthropic-protocol
@@ -95,7 +95,7 @@ def codex_model_info(model_id):
     return {
         "slug": model_id,
         "display_name": model_id,
-        "description": "Local model served by Mira",
+        "description": "Local model served by Fermi",
         "default_reasoning_level": "medium",
         "supported_reasoning_levels": [],
         "shell_type": "shell_command",
@@ -599,6 +599,6 @@ class Server(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     with Server(("127.0.0.1", PORT), Handler) as srv:
-        print(f"Mira Anthropic bridge on http://127.0.0.1:{PORT} (upstream: {API})")
+        print(f"Fermi Anthropic bridge on http://127.0.0.1:{PORT} (upstream: {API})")
         sys.stdout.flush()
         srv.serve_forever()

@@ -10,6 +10,7 @@
   let filter = "";
   let findEl: HTMLInputElement;
   let listEl: HTMLDivElement;
+  let pickerEl: HTMLDivElement;
 
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let searchGeneration = 0;
@@ -91,7 +92,9 @@
     switchModel(id);
   }
 
-  const onDocClick = () => { open = false; };
+  const onDocClick = (event: MouseEvent) => {
+    if (!pickerEl.contains(event.target as Node)) open = false;
+  };
   onMount(() => document.addEventListener("click", onDocClick));
   onDestroy(() => {
     document.removeEventListener("click", onDocClick);
@@ -100,30 +103,30 @@
   });
 </script>
 
-<div id="picker">
+<div id="picker" bind:this={pickerEl}>
   <button id="pickerBtn" title={$pickerLabel.title} onclick={toggleMenu}><span class="name">{$pickerLabel.name}</span><span class="caret">▾</span></button>
-  <div id="menu" class:open onclick={(e: MouseEvent) => e.stopPropagation()}>
+  <div id="menu" class:open>
     <input id="find" placeholder="Find model…" bind:this={findEl} bind:value={filter} oninput={() => scheduleSearch(filter)} />
     <div id="list" bind:this={listEl}>
       {#each local as v (v.id)}
-        <div class="opt" class:cur={v.id === $model}
+        <button class="opt" class:cur={v.id === $model}
              title={v.downloaded ? v.id : v.id + " (not on disk yet — switching downloads it)"}
              onclick={() => pick(v.id)}>
           <span class="lbl">{v.label}</span>
           <span class="mark">{v.id === $model ? "✓" : (v.downloaded ? "本地" : "↓")}</span>
-        </div>
+        </button>
       {/each}
       {#if showNothingLocal}<div class="opt-label">nothing local matches</div>{/if}
       {#if searching}<div class="opt-label">searching Hugging Face…</div>{/if}
       {#if showHub}
         <div class="opt-label">on Hugging Face</div>
         {#each hubFiltered as v (v.id)}
-          <div class="opt" class:cur={v.id === $model}
+          <button class="opt" class:cur={v.id === $model}
                title={v.downloaded ? v.id : v.id + " (not on disk yet — switching downloads it)"}
                onclick={() => pick(v.id)}>
             <span class="lbl">{v.label}</span>
             <span class="mark">{v.id === $model ? "✓" : (v.downloaded ? "本地" : "↓")}</span>
-          </div>
+          </button>
         {/each}
       {/if}
     </div>

@@ -8,16 +8,23 @@
 // zero. runAgentRequest only flips fields on the record object; Waiting and
 // MessageList render those fields.
 import { get } from "svelte/store";
-import { chats, curId, activeAgentRequests, saveChats, openChat } from "./stores/chats";
+import { chats, activeAgentRequests, commitMessageTransition } from "./stores/chats";
 import { busy } from "./stores/ui";
+import { errorMessage, type AgentMessage } from "./domain";
+
+interface AgentResult {
+  content?: string;
+  tasks?: string[];
+  error?: string;
+}
 
 // showAgentWaiting(b, startedAt): the anchor used for the elapsed readout.
-export function waitingAnchor(record: any): number {
+export function waitingAnchor(record: AgentMessage): number {
   return record.startedAt || Date.now();
 }
 
-export async function runAgentRequest(record: any, chatId: string | null): Promise<void> {
-  if (!record.startedAt) { record.startedAt = Date.now(); saveChats(); }
+export async function runAgentRequest(record: AgentMessage, chatId: string | null): Promise<void> {
+  if (!record.startedAt) { record.startedAt = Date.now(); commitMessageTransition(chatId); }
   if (activeAgentRequests.has(record.requestId)) {
     // Reopened mid-flight: the guard blocks a duplicate request, but the live
     // waiting state must still show — anchored to the original start, or the
@@ -43,25 +50,24 @@ export async function runAgentRequest(record: any, chatId: string | null): Promi
                            request_id: record.requestId}),
     });
     if (!resp.ok) {
-      const failure = await resp.json();
+      const failure = await resp.json() as AgentResult;
       throw new Error(failure.error || `HTTP ${resp.status}`);
     }
-    const result = await resp.json();
+    const result = await resp.json() as AgentResult;
     record.content = result.content || "任务已处理。";
     record.tasks = result.tasks || [];
     record.status = "complete";
     record.elapsed = ((Date.now() - started) / 1000).toFixed(1);
-  } catch (err: any) {
-    record.content = "⚠ " + err.message;
+  } catch (err: unknown) {
+    record.content = "⚠ " + errorMessage(err);
     record.status = "failed";
   } finally {
     activeAgentRequests.delete(record.requestId);
-    saveChats();
+    commitMessageTransition(chatId);
     busy.set(false);
     // Re-render the conversation if the user is still on it: openChat sets a
     // fresh messages array so MessageList re-reads the mutated record (the
     // Waiting indicator disappears because status is no longer "planning").
-    if (get(curId) === chatId) openChat(chatId!);
     document.getElementById("input")?.focus();
   }
 }

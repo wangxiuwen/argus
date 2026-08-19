@@ -3,7 +3,7 @@ import ServiceManagement
 import UniformTypeIdentifiers
 import WebKit
 
-// Mira — macOS menu bar app to start/stop local AI services.
+// Fermi — macOS menu bar app to start/stop local AI services.
 // Reads PORT/HOST/MODEL from ~/.config/argus/config (KEY=VALUE lines).
 
 struct Config {
@@ -58,8 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         return "http://\(clientHost):\(config.port)"
     }
 
-    func setTray(symbol: String = "bird.fill", color: NSColor = .secondaryLabelColor,
-                 tooltip: String = "Mira") {
+    func setTray(symbol: String = "atom", color: NSColor = .secondaryLabelColor,
+                 tooltip: String = "Fermi") {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
             .withSymbolConfiguration(config)
@@ -75,10 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         // A regular Dock app needs an application menu as well as editing shortcuts.
         let mainMenu = NSMenu()
         let appHolder = NSMenuItem()
-        let appMenu = NSMenu(title: "Mira")
-        appMenu.addItem(withTitle: "About Mira", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let appMenu = NSMenu(title: "Fermi")
+        appMenu.addItem(withTitle: "About Fermi", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Quit Mira", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Fermi", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appHolder.submenu = appMenu
         mainMenu.addItem(appHolder)
         let editHolder = NSMenuItem()
@@ -96,12 +96,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
 
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let openItem = NSMenuItem(title: "Open Mira", action: #selector(openChat), keyEquivalent: "o")
-        openItem.image = NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)
+        let openItem = NSMenuItem(title: "Open Fermi", action: #selector(openChat), keyEquivalent: "o")
+        openItem.image = NSImage(systemSymbolName: "atom", accessibilityDescription: nil)
         openItem.target = self
         let menuSize = NSFont.menuFont(ofSize: 0).pointSize
         openItem.attributedTitle = NSAttributedString(
-            string: "Open Mira",
+            string: "Open Fermi",
             attributes: [.font: NSFont.boldSystemFont(ofSize: menuSize)])
         menu.addItem(openItem)
         menu.addItem(NSMenuItem.separator())
@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
-        let quitItem = NSMenuItem(title: "Quit Mira (server keeps running)", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Fermi (server keeps running)", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
         statusItem.menu = menu
@@ -165,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
     var chatWebView: WKWebView?
 
     @objc func openChat() {
-        // Closing the last chat window hides Mira from the Dock while the tray
+        // Closing the last chat window hides Fermi from the Dock while the tray
         // and services keep running. Restore the Dock identity when reopened.
         NSApp.setActivationPolicy(.regular)
         runCtl("ui", "start")
@@ -177,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
                 styleMask: [.titled, .closable, .resizable, .miniaturizable],
                 backing: .buffered, defer: false)
             win.delegate = self
-            win.title = "Mira"
+            win.title = "Fermi"
             win.minSize = NSSize(width: 480, height: 400)
             win.center()
             win.contentView = web
@@ -244,7 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
     @objc func startServer() {
         config = Config.load()
         runCtl("start")
-        setTray(color: .systemOrange, tooltip: "Mira · loading model")
+        setTray(color: .systemOrange, tooltip: "Fermi · loading model")
         statusLine.title = "Status: loading model (1–2 min, longer on first download)…"
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refresh() }
     }
@@ -257,7 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
     @objc func restartServer() {
         config = Config.load()
         runCtl("restart")
-        setTray(color: .systemOrange, tooltip: "Mira · restarting")
+        setTray(color: .systemOrange, tooltip: "Fermi · restarting")
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refresh() }
     }
 
@@ -274,7 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
                 contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
                 styleMask: [.titled, .closable, .resizable],
                 backing: .buffered, defer: false)
-            win.title = "Mira Settings"
+            win.title = "Fermi Settings"
             win.minSize = NSSize(width: 460, height: 420)
             win.center()
             win.contentView = web
@@ -314,7 +314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         guard let id = sender.representedObject as? String, id != config.model else { return }
         runCtl("use", id)
         config.model = id
-        setTray(color: .systemOrange, tooltip: "Mira · switching model")
+        setTray(color: .systemOrange, tooltip: "Fermi · switching model")
         statusLine.title = "Status: switching model…"
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refresh() }
     }
@@ -398,13 +398,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
                     for item in self.modelMenu.items {
                         item.state = (item.representedObject as? String) == activeModel ? .on : .off
                     }
-                    self.setTray(color: .systemGreen, tooltip: "Mira · ready")
+                    self.setTray(color: .systemGreen, tooltip: "Fermi · ready")
                     self.statusLine.title = "Status: ready — \(self.apiURL)"
                 } else if alive {
-                    self.setTray(color: .systemOrange, tooltip: "Mira · loading model")
+                    self.setTray(color: .systemOrange, tooltip: "Fermi · loading model")
                     self.statusLine.title = "Status: busy or loading model…"
                 } else {
-                    self.setTray(symbol: "bird", tooltip: "Mira · not running")
+                    self.setTray(symbol: "atom", tooltip: "Fermi · not running")
                     self.statusLine.title = "Status: not running"
                 }
                 self.startItem.isEnabled = !(ready || alive)

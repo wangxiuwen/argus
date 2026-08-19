@@ -9,6 +9,25 @@ const check = (name, ok, detail='') => { console.log(`${ok?'PASS':'FAIL'}  ${nam
 // --- 1. model picker opens unclipped ---
 await p.goto(URL, { waitUntil: 'domcontentloaded' });
 await p.waitForTimeout(1200);
+const branding = await p.evaluate(() => ({
+  title: document.title,
+  name: document.querySelector('.brand-name')?.textContent,
+  icon: document.querySelector('.brand-mark img')?.getAttribute('src'),
+}));
+check('Fermi branding is visible',
+  branding.title === 'Fermi' && branding.name === 'Fermi' && branding.icon === '/mira/icon.png',
+  JSON.stringify(branding));
+const layout = await p.evaluate(() => {
+  const app = document.getElementById('app')?.getBoundingClientRect();
+  const side = document.getElementById('side')?.getBoundingClientRect();
+  const main = document.getElementById('main')?.getBoundingClientRect();
+  return { viewport: innerWidth, app: app?.width, side: side?.width,
+           main: main?.width, sameRow: side?.top === main?.top };
+});
+check('root layout fills the window in one row',
+  layout.sameRow && layout.app === layout.viewport &&
+  Math.abs((layout.side || 0) + (layout.main || 0) - layout.viewport) < 1,
+  JSON.stringify(layout));
 await p.click('#pickerBtn');
 await p.waitForTimeout(400);
 const menu = await p.evaluate(() => {
@@ -65,5 +84,47 @@ const resume = await p2.evaluate(() => {
 });
 check('resume persists startedAt', !!resume.startedAt, JSON.stringify(resume));
 check('resume shows running card (not failed)', resume.status === 'running' && /生成|下载|恢复|处理/.test(resume.cardText), resume.cardText);
+
+// --- 4. long-running music is visibly active instead of looking stuck at 0/1 ---
+const ctx3 = await b.newContext({ viewport: { width: 1280, height: 800 } });
+const p3 = await ctx3.newPage();
+await p3.route('**/mira/jobs/music-diag', route => route.fulfill({ json: {
+  id: 'music-diag', kind: 'music', status: 'running', total: 1,
+  completed: 0, failed: 0, updated: Date.now() / 1000 - 600,
+  spec: { duration_seconds: 60 }, items: [],
+}}));
+await p3.addInitScript(() => localStorage.setItem('argus.chats', JSON.stringify([{
+  id: 'music-diag-chat', title: 'music', messages: [
+    {role: 'assistant', content: '任务已创建，正在后台生成。', tasks: ['music-diag'], status: 'complete'},
+  ],
+}])));
+await p3.goto(URL, { waitUntil: 'domcontentloaded' });
+await p3.click('#chats .chat-row');
+await p3.waitForTimeout(300);
+const longMusic = await p3.evaluate(() => ({
+  value: document.querySelector('.task-progress progress')?.getAttribute('value'),
+  hint: document.querySelector('.task-hint')?.textContent || '',
+}));
+check('long music uses indeterminate progress with an honest duration hint',
+  longMusic.value === null && /十几分钟/.test(longMusic.hint), JSON.stringify(longMusic));
+
+// --- 5. a completed creation stays visible and can be generated again ---
+const ctx4 = await b.newContext({ viewport: { width: 1280, height: 800 } });
+const p4 = await ctx4.newPage();
+await p4.route('**/mira/jobs/music-done', route => route.fulfill({ json: {
+  id: 'music-done', kind: 'music', status: 'complete', total: 1,
+  completed: 1, failed: 0, updated: Date.now() / 1000,
+  items: [{ position: 1, status: 'complete', output: '/mira/music/output.wav', quality_score: 9 }],
+}}));
+await p4.addInitScript(() => localStorage.setItem('argus.chats', JSON.stringify([{
+  id: 'music-done-chat', title: 'music done', messages: [
+    {role: 'assistant', content: '任务已完成。', tasks: ['music-done'], status: 'complete'},
+  ],
+}])));
+await p4.goto(URL, { waitUntil: 'domcontentloaded' });
+await p4.click('#chats .chat-row');
+await p4.waitForTimeout(300);
+const repeatLabel = await p4.locator('.task-actions button').textContent();
+check('completed task offers generation retry', repeatLabel === '再次生成', repeatLabel || 'MISSING');
 await b.close();
 process.exit(failed ? 1 : 0);

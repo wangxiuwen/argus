@@ -1,15 +1,15 @@
-APP     = Mira
+APP     = Fermi
 VERSION = 0.5.0
 OUT     = .build/$(APP)
 BUNDLE  = $(HOME)/Applications/$(APP).app
 BIN_DIR = $(HOME)/.local/bin
 STAGE   = .build/stage
-DIST    = dist/mira-$(VERSION)-macos-arm64.tar.gz
-SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html share/MiraIcon.png \
+DIST    = dist/fermi-$(VERSION)-macos-arm64.tar.gz
+SHARE_FILES = share/chat.py share/ui.py share/ui.html share/settings.html share/FermiIcon.png \
 	share/launch.py share/bridge.py share/prune.py share/video.py share/music.py \
 	share/image.py share/jobs.py share/iteration.py
 VIDEO_PIPELINES = share/video-pipelines/*.vpipeline
-ICON = assets/Mira.icns
+ICON = assets/Fermi.icns
 VPIPE_DMG = .cache/VpipeManager-0.1.26-with-ffmpeg.dmg
 VPIPE_SHA256 = 25abea40b3bde34670295939771f288832f5b5358374140fce0c20bdc177b276
 MLX_SERVE_ARCHIVE = .cache/mlx-serve-bin-macos-arm64-26.8.8.tar.gz
@@ -19,7 +19,7 @@ MLX_SERVE_SHA256 = 15a083189124f67b1625fc4c2f76726fa6b82c052812c398ad5c3e250386f
 
 build:
 	mkdir -p .build
-	swiftc -O -o $(OUT) Mira/main.swift
+	swiftc -O -o $(OUT) Fermi/main.swift
 	lipo $(OUT) -verify_arch arm64
 
 test:
@@ -27,7 +27,7 @@ test:
 	python3 -m py_compile share/*.py
 	zsh -n bin/argus
 	sh -n install.sh
-	cd web && npm install --no-fund --no-audit --silent && npx vite build
+	cd web && npm install --no-fund --no-audit --silent && npm run check && npm run build
 
 verify-vpipe: $(VPIPE_DMG)
 	@echo "$(VPIPE_SHA256)  $(VPIPE_DMG)" | shasum -a 256 -c -
@@ -51,7 +51,7 @@ install: build webbuild verify-vpipe verify-mlx-serve
 	cp $(OUT) $(BUNDLE)/Contents/MacOS/
 	cp Info.plist $(BUNDLE)/Contents/
 	cp $(VIDEO_PIPELINES) $(BUNDLE)/Contents/Resources/video-pipelines/
-	cp $(ICON) $(BUNDLE)/Contents/Resources/Mira.icns
+	cp $(ICON) $(BUNDLE)/Contents/Resources/Fermi.icns
 	./scripts/embed-vpipe.sh $(VPIPE_DMG) $(BUNDLE)
 	./scripts/embed-mlx-serve.sh $(MLX_SERVE_ARCHIVE) $(BUNDLE)
 	plutil -replace CFBundleShortVersionString -string $(VERSION) $(BUNDLE)/Contents/Info.plist
@@ -59,11 +59,12 @@ install: build webbuild verify-vpipe verify-mlx-serve
 	codesign --force --deep --sign - $(BUNDLE)
 	install -m 755 bin/argus $(BIN_DIR)/argus
 	install -m 755 bin/argus $(BIN_DIR)/mira
+	install -m 755 bin/argus $(BIN_DIR)/fermi
 	mkdir -p $(HOME)/.local/share/argus
 	install -m 644 $(SHARE_FILES) $(HOME)/.local/share/argus/
 	rm -rf $(HOME)/.local/share/argus/dist
 	cp -r web/dist $(HOME)/.local/share/argus/dist
-	@echo "installed: $(BUNDLE) and $(BIN_DIR)/mira (argus compatibility alias retained)"
+	@echo "installed: $(BUNDLE) and $(BIN_DIR)/fermi (mira/argus compatibility aliases retained)"
 	@echo "open the tray app with: open $(BUNDLE)"
 
 uninstall:
@@ -73,6 +74,7 @@ uninstall:
 	rm -rf $(BUNDLE)
 	rm -f $(BIN_DIR)/argus
 	rm -f $(BIN_DIR)/mira
+	rm -f $(BIN_DIR)/fermi
 	rm -rf $(HOME)/.local/share/argus
 
 dist: build webbuild verify-vpipe verify-mlx-serve
@@ -80,7 +82,7 @@ dist: build webbuild verify-vpipe verify-mlx-serve
 	cp $(OUT) $(STAGE)/$(APP).app/Contents/MacOS/
 	cp Info.plist $(STAGE)/$(APP).app/Contents/
 	cp $(VIDEO_PIPELINES) $(STAGE)/$(APP).app/Contents/Resources/video-pipelines/
-	cp $(ICON) $(STAGE)/$(APP).app/Contents/Resources/Mira.icns
+	cp $(ICON) $(STAGE)/$(APP).app/Contents/Resources/Fermi.icns
 	./scripts/embed-vpipe.sh $(VPIPE_DMG) $(STAGE)/$(APP).app
 	./scripts/embed-mlx-serve.sh $(MLX_SERVE_ARCHIVE) $(STAGE)/$(APP).app
 	plutil -replace CFBundleShortVersionString -string $(VERSION) $(STAGE)/$(APP).app/Contents/Info.plist

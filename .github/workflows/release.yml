@@ -35,12 +35,12 @@ jobs:
         run: |
           set -e
           tar -tzf dist/*.tar.gz > files.txt
-          for want in ./Mira.app/Contents/Info.plist ./Mira.app/Contents/MacOS/Mira \
-                      ./Mira.app/Contents/Resources/Mira.icns \
-                      ./Mira.app/Contents/Helpers/vpipe \
-                      ./Mira.app/Contents/Helpers/mlx-serve/mlx-serve \
+          for want in ./Fermi.app/Contents/Info.plist ./Fermi.app/Contents/MacOS/Fermi \
+                      ./Fermi.app/Contents/Resources/Fermi.icns \
+                      ./Fermi.app/Contents/Helpers/vpipe \
+                      ./Fermi.app/Contents/Helpers/mlx-serve/mlx-serve \
                       ./bin/argus ./share/chat.py ./share/ui.py ./share/ui.html \
-                      ./share/settings.html ./share/MiraIcon.png ./share/bridge.py ./share/launch.py \
+                      ./share/settings.html ./share/FermiIcon.png ./share/bridge.py ./share/launch.py \
                       ./share/prune.py ./share/video.py ./share/music.py \
                       ./share/image.py ./share/jobs.py ./share/iteration.py \
                       ./install.sh ./README.md ./LICENSE; do
@@ -48,7 +48,7 @@ jobs:
           done
           VERSION="${RELEASE_TAG#v}"
           BUNDLE_VERSION="$(plutil -extract CFBundleShortVersionString raw -o - \
-            .build/stage/Mira.app/Contents/Info.plist)"
+            .build/stage/Fermi.app/Contents/Info.plist)"
           test "$BUNDLE_VERSION" = "$VERSION" || {
             echo "bundle version $BUNDLE_VERSION does not match $VERSION"; exit 1;
           }
@@ -60,15 +60,15 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           gh release create "$TAG" dist/*.tar.gz \
-            --title "Mira $TAG" \
+            --title "Fermi $TAG" \
             --generate-notes \
             --notes "$(cat <<'EOF'
           ### Install
 
           ```sh
-          tar -xzf mira-*-macos-arm64.tar.gz
+          tar -xzf fermi-*-macos-arm64.tar.gz
           ./install.sh
-          open ~/Applications/Mira.app
+          open ~/Applications/Fermi.app
           ```
 
           Requires an Apple Silicon Mac and [mlx-vlm](https://github.com/Blaizzy/mlx-vlm):
@@ -76,6 +76,6 @@ jobs:
 
           The app is ad-hoc signed, not notarized. `install.sh` clears the quarantine
           flag for you; if you copy the app by hand, run
-          `xattr -dr com.apple.quarantine ~/Applications/Mira.app`.
+          `xattr -dr com.apple.quarantine ~/Applications/Fermi.app`.
           EOF
           )" || gh release upload "$TAG" dist/*.tar.gz --clobber

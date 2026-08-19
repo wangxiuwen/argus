@@ -7,14 +7,14 @@
   // `record` is the message object owned by the chats store — the runtime in
   // lib/media.ts mutates its fields (jobId/url/status/elapsed/…) and calls
   // saveChats(); this component only mirrors card UI state and re-renders.
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import { runMedia, resumeMedia, subscribeMedia, unsubscribeMedia, isMediaRunning, type MediaCallbacks } from "../lib/media";
   import { mediaJson } from "../lib/api";
 
   let { record }: { record: any } = $props();
 
   // --- card UI state (legacy: title div + progress bar + label span) ---
-  let view = $state(record.status === "complete" ? "complete" : record.status === "running" ? "running" : "failed");
+  let view = $state(untrack(() => record.status === "complete" ? "complete" : record.status === "running" ? "running" : "failed"));
   let title = $state("");
   let stageLabel = $state("正在启动本地模型…");
   let pCur = $state<number | null>(null); // null → indeterminate bar (legacy: no value attribute)
@@ -22,7 +22,7 @@
   let failMsg = $state<string | null>(null); // set on live failure → .notice class (legacy openChat replay has none)
 
   // --- completed-view state (renderMedia buttons) ---
-  let dlText = $state("下载到“下载/Mira”");
+  let dlText = $state("下载到“下载/Fermi”");
   let dlDisabled = $state(false);
   let dlTitle = $state("");
   let editingRating = $state<number | null>(null); // legacy feedback.dataset.editing + hidden
@@ -113,6 +113,7 @@
     {:else if record.kind === "music"}
       <audio controls preload="metadata" src={record.url}></audio>
     {:else if record.kind === "video"}
+      <!-- svelte-ignore a11y_media_has_caption -- generated media has no caption source -->
       <video controls preload="metadata" src={record.url}></video>
     {/if}
     <div class="media-actions">

@@ -814,6 +814,17 @@ async function renderTaskCard(parent, id) {
         cancel.onclick=async()=>{await taskAction(id,"cancel");refresh();};
         actions.append(pause,cancel); card.append(actions);
         setTimeout(refresh,3000);
+      } else if(task.failed>0 || task.completed+task.failed<task.total){
+        const actions=document.createElement("div"); actions.className="task-actions";
+        const retry=document.createElement("button"); retry.className="media-download";
+        retry.textContent="重试失败项";
+        retry.onclick=async()=>{
+          retry.disabled=true; retry.textContent="正在重新排队…";
+          try { await taskAction(id,"retry"); } catch(e) { retry.disabled=false; retry.textContent=`重试失败：${e.message}`; return; }
+          refresh();
+        };
+        actions.append(retry); card.append(actions);
+        setTimeout(refresh,3000);
       }
     } catch(e) { card.textContent=`任务状态读取失败：${e.message}`; }
   }

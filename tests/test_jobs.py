@@ -105,6 +105,25 @@ class DurableQueueTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             jobs.action(batch_id, "resume")
 
+    def test_retry_requeues_failed_items_of_a_finished_batch(self):
+        result, _ = jobs.create_batch({"kind": "video", "count": 1, "prompt": "fog forest"})
+        batch_id = result["id"]
+        with jobs.database() as db:
+            db.execute("UPDATE items SET status='failed',error='hf download failed' WHERE batch_id=?",
+                       (batch_id,))
+            db.execute("UPDATE batches SET status='failed',error='hf download failed',failed=1 WHERE id=?",
+                       (batch_id,))
+        retried = jobs.action(batch_id, "retry")
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["failed"], 0)
+        self.assertIsNone(retried["error"])
+        self.assertEqual([item["status"] for item in retried["items"]], ["queued"])
+        running, _ = jobs.create_batch({"kind": "image", "count": 1, "prompt": "x"})
+        with jobs.database() as db:
+            db.execute("UPDATE batches SET status='running' WHERE id=?", (running["id"],))
+        with self.assertRaises(ValueError):
+            jobs.action(running["id"], "retry")
+
 
 class AgentLoopTests(unittest.TestCase):
     def test_agent_can_propose_but_cannot_approve_self_changes(self):

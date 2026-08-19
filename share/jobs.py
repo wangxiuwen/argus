@@ -70,9 +70,9 @@ AGENT_TOOLS = [
      "description": "List recent generation batches and their progress",
      "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "control_generation_task",
-     "description": "Pause, resume, or cancel a generation batch",
+     "description": "Pause, resume, retry failed items of, or cancel a generation batch",
      "parameters": {"type": "object", "properties": {
-         "batch_id": {"type": "string"}, "action": {"type": "string", "enum": ["pause", "resume", "cancel"]}},
+         "batch_id": {"type": "string"}, "action": {"type": "string", "enum": ["pause", "resume", "retry", "cancel"]}},
          "required": ["batch_id", "action"]}}},
     {"type": "function", "function": {"name": "remember_preference",
      "description": "Persist an explicit user creative preference for future work",
@@ -205,6 +205,24 @@ def batches():
 
 
 def action(batch_id, name):
+    if name == "retry":
+        with db_lock, database() as db:
+            current = db.execute("SELECT status FROM batches WHERE id=?", (batch_id,)).fetchone()
+            if not current:
+                return None
+            if current["status"] not in {"failed", "cancelled"}:
+                raise ValueError(f"cannot retry a {current['status']} batch")
+            db.execute(
+                "UPDATE items SET status='queued',error=NULL,attempts=0 "
+                "WHERE batch_id=? AND status IN ('failed','cancelled')", (batch_id,))
+            db.execute(
+                "UPDATE batches SET status='queued',error=NULL,updated=?,"
+                "completed=(SELECT count(*) FROM items WHERE batch_id=? AND status='complete'),"
+                "failed=(SELECT count(*) FROM items WHERE batch_id=? AND status='failed')"
+                " WHERE id=?", (time.time(), batch_id, batch_id, batch_id))
+        finalize_batch(batch_id)
+        wake.set()
+        return batch(batch_id)
     target = {"pause": "paused", "resume": "queued", "cancel": "cancelled"}.get(name)
     if not target:
         raise ValueError("unknown action")
@@ -439,9 +457,15 @@ def run_media(kind, payload):
     try:
         accepted = request_json(base + "/api/generate", payload)
     except RuntimeError as error:
-        if "not prepared" not in str(error).lower() and "尚未准备" not in str(error):
+        # "busy" = a download or another generation already holds the worker;
+        # wait for the same model_ready && !running gate either way.
+        if ("not prepared" not in str(error).lower() and "尚未准备" not in str(error)
+                and "busy" not in str(error).lower()):
             raise
-        request_json(base + "/api/prepare", {"accept_license": True})
+        try:
+            request_json(base + "/api/prepare", {"accept_license": True})
+        except RuntimeError:
+            pass  # already preparing — the wait loop below is the gate
         while True:
             status = request_json(base + "/api/status")
             if status.get("error"):

@@ -65,6 +65,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         page = (ROOT / "share" / "ui.html").read_text()
         readme = (ROOT / "README.md").read_text()
         mark = (ROOT / "assets" / "FermiMark.svg").read_text()
+        icon = (ROOT / "assets" / "FermiIcon.svg").read_text()
         self.assertIn('Bundle.main.url(forResource: "FermiMark", withExtension: "png")', swift)
         self.assertIn('Bundle.main.url(forResource: "FermiIcon", withExtension: "png")', swift)
         self.assertIn("NSApp.applicationIconImage = icon", swift)
@@ -87,6 +88,8 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("#6D3DF5", mark)
         self.assertNotIn("gradient", mark.lower())
         self.assertNotIn("filter", mark.lower())
+        self.assertIn('rx="208" fill="#F7F6FB"', icon)
+        self.assertIn('rx="207.5" fill="none" stroke="#E7E4EE"', icon)
 
         backend = (ROOT / "share" / "ui.py").read_text()
         self.assertIn('route == "/mira/icon.png"', backend)

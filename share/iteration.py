@@ -23,10 +23,10 @@ ROOT = pathlib.Path(os.environ.get(
 DB = pathlib.Path(os.environ.get(
     "MIRA_JOBS_DB",
     pathlib.Path.home() / "Library" / "Application Support" / "Mira" / "jobs.sqlite3"))
-PUBLIC_REPO = "https://github.com/wangxiuwen/mira.git"
+PUBLIC_REPO = "https://github.com/wangxiuwen/fermi.git"
 PUBLIC_PUSH_REPO = os.environ.get(
-    "MIRA_PUBLIC_PUSH_REPO", "ssh://git@ssh.github.com:443/wangxiuwen/mira.git")
-PUBLIC_GH_REPO = os.environ.get("MIRA_PUBLIC_GH_REPO", "wangxiuwen/mira")
+    "MIRA_PUBLIC_PUSH_REPO", "ssh://git@ssh.github.com:443/wangxiuwen/fermi.git")
+PUBLIC_GH_REPO = os.environ.get("MIRA_PUBLIC_GH_REPO", "wangxiuwen/fermi")
 FERMI = pathlib.Path.home() / ".local" / "bin" / "fermi"
 lock = threading.RLock()
 

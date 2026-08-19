@@ -55,8 +55,8 @@ H3 artifacts live under the same HF cache in `hub/mira-vpipe`.
 ## Install
 
 ```bash
-git clone https://github.com/wangxiuwen/mira.git
-cd mira
+git clone https://github.com/wangxiuwen/fermi.git
+cd fermi
 make install
 open ~/Applications/Fermi.app
 ```

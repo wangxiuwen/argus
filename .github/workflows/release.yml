@@ -37,6 +37,7 @@ jobs:
           tar -tzf dist/*.tar.gz > files.txt
           for want in ./Fermi.app/Contents/Info.plist ./Fermi.app/Contents/MacOS/Fermi \
                       ./Fermi.app/Contents/Resources/Fermi.icns \
+                      ./Fermi.app/Contents/Resources/FermiMark.png \
                       ./Fermi.app/Contents/Helpers/vpipe \
                       ./Fermi.app/Contents/Helpers/mlx-serve/mlx-serve \
                       ./bin/argus ./share/chat.py ./share/ui.py ./share/ui.html \

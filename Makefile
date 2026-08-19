@@ -52,6 +52,7 @@ install: build webbuild verify-vpipe verify-mlx-serve
 	cp Info.plist $(BUNDLE)/Contents/
 	cp $(VIDEO_PIPELINES) $(BUNDLE)/Contents/Resources/video-pipelines/
 	cp $(ICON) $(BUNDLE)/Contents/Resources/Fermi.icns
+	cp assets/FermiMark.png $(BUNDLE)/Contents/Resources/FermiMark.png
 	./scripts/embed-vpipe.sh $(VPIPE_DMG) $(BUNDLE)
 	./scripts/embed-mlx-serve.sh $(MLX_SERVE_ARCHIVE) $(BUNDLE)
 	plutil -replace CFBundleShortVersionString -string $(VERSION) $(BUNDLE)/Contents/Info.plist
@@ -83,6 +84,7 @@ dist: build webbuild verify-vpipe verify-mlx-serve
 	cp Info.plist $(STAGE)/$(APP).app/Contents/
 	cp $(VIDEO_PIPELINES) $(STAGE)/$(APP).app/Contents/Resources/video-pipelines/
 	cp $(ICON) $(STAGE)/$(APP).app/Contents/Resources/Fermi.icns
+	cp assets/FermiMark.png $(STAGE)/$(APP).app/Contents/Resources/FermiMark.png
 	./scripts/embed-vpipe.sh $(VPIPE_DMG) $(STAGE)/$(APP).app
 	./scripts/embed-mlx-serve.sh $(MLX_SERVE_ARCHIVE) $(STAGE)/$(APP).app
 	plutil -replace CFBundleShortVersionString -string $(VERSION) $(STAGE)/$(APP).app/Contents/Info.plist

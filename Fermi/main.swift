@@ -58,14 +58,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         return "http://\(clientHost):\(config.port)"
     }
 
-    func setTray(symbol: String = "atom", color: NSColor = .secondaryLabelColor,
-                 tooltip: String = "Fermi") {
-        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
+    func fermiMark(size: CGFloat = 18) -> NSImage? {
+        if let url = Bundle.main.url(forResource: "FermiMark", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            image.size = NSSize(width: size, height: size)
+            image.isTemplate = true
+            return image
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: size - 2, weight: .medium)
+        let fallback = NSImage(systemSymbolName: "atom", accessibilityDescription: "Fermi")?
             .withSymbolConfiguration(config)
-        image?.isTemplate = true
+        fallback?.isTemplate = true
+        return fallback
+    }
+
+    func setTray(color: NSColor = .secondaryLabelColor, tooltip: String = "Fermi") {
         statusItem.button?.title = ""
-        statusItem.button?.image = image
+        statusItem.button?.image = fermiMark()
         statusItem.button?.imagePosition = .imageOnly
         statusItem.button?.contentTintColor = color
         statusItem.button?.toolTip = tooltip
@@ -97,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         let menu = NSMenu()
         menu.autoenablesItems = false
         let openItem = NSMenuItem(title: "Open Fermi", action: #selector(openChat), keyEquivalent: "o")
-        openItem.image = NSImage(systemSymbolName: "atom", accessibilityDescription: nil)
+        openItem.image = fermiMark(size: 16)
         openItem.target = self
         let menuSize = NSFont.menuFont(ofSize: 0).pointSize
         openItem.attributedTitle = NSAttributedString(
@@ -404,7 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
                     self.setTray(color: .systemOrange, tooltip: "Fermi · loading model")
                     self.statusLine.title = "Status: busy or loading model…"
                 } else {
-                    self.setTray(symbol: "atom", tooltip: "Fermi · not running")
+                    self.setTray(tooltip: "Fermi · not running")
                     self.statusLine.title = "Status: not running"
                 }
                 self.startItem.isEnabled = !(ready || alive)
